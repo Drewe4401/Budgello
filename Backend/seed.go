@@ -26,42 +26,58 @@ func seedDatabase() error {
 	hashedPasswordAlice, _ := bcrypt.GenerateFromPassword([]byte("password123"), 8)
 	hashedPasswordBob, _ := bcrypt.GenerateFromPassword([]byte("password456"), 8)
 
-	// Alice is an admin, Bob is a user (using the default value)
-	_, err = db.Exec("INSERT INTO users (username, password, role) VALUES ('alice', $1, 'admin')", string(hashedPasswordAlice))
+	// Alice is an admin, Bob is a user
+	var aliceID, bobID int
+	err = db.QueryRow("INSERT INTO users (username, password, role) VALUES ('alice', $1, 'admin') RETURNING id", string(hashedPasswordAlice)).Scan(&aliceID)
 	if err != nil {
 		return err
 	}
-	_, err = db.Exec("INSERT INTO users (username, password) VALUES ('bob', $1)", string(hashedPasswordBob))
+	err = db.QueryRow("INSERT INTO users (username, password) VALUES ('bob', $1) RETURNING id", string(hashedPasswordBob)).Scan(&bobID)
 	if err != nil {
 		return err
 	}
 	log.Println("Seeded users.")
 
-	// --- Seed Categories ---
-	categories := []string{"Groceries", "Transport", "Entertainment", "Utilities", "Rent", "Health"}
-	for _, cat := range categories {
-		_, err := db.Exec("INSERT INTO categories (name) VALUES ($1) ON CONFLICT (name) DO NOTHING", cat)
+	// --- Seed Categories for each user ---
+	aliceCategories := map[string]int{}
+	bobCategories := map[string]int{}
+
+	// Alice's Categories
+	for _, catName := range []string{"Groceries", "Transport", "Entertainment", "Utilities", "Rent"} {
+		var catID int
+		err := db.QueryRow("INSERT INTO categories (user_id, name) VALUES ($1, $2) RETURNING id", aliceID, catName).Scan(&catID)
 		if err != nil {
 			return err
 		}
+		aliceCategories[catName] = catID
 	}
-	log.Println("Seeded categories.")
+
+	// Bob's Categories
+	for _, catName := range []string{"Groceries", "Bus Pass", "Concerts", "Health", "Food"} {
+		var catID int
+		err := db.QueryRow("INSERT INTO categories (user_id, name) VALUES ($1, $2) RETURNING id", bobID, catName).Scan(&catID)
+		if err != nil {
+			return err
+		}
+		bobCategories[catName] = catID
+	}
+	log.Println("Seeded user-specific categories.")
 
 	// --- Seed Transactions ---
-	// Alice's Transactions (UserID: 1, CategoryIDs: 1-6)
+	// Alice's Transactions (UserID: 1)
 	transactions := []Transaction{
-		{UserID: 1, Description: "Weekly grocery run", Amount: 125.50, Date: time.Now().AddDate(0, 0, -5), CategoryID: 1},
-		{UserID: 1, Description: "Gas for car", Amount: 45.00, Date: time.Now().AddDate(0, 0, -4), CategoryID: 2},
-		{UserID: 1, Description: "Movie tickets", Amount: 32.00, Date: time.Now().AddDate(0, 0, -3), CategoryID: 3},
-		{UserID: 1, Description: "Electricity bill", Amount: 85.75, Date: time.Now().AddDate(0, 0, -2), CategoryID: 4},
-		{UserID: 1, Description: "Monthly rent", Amount: 1200.00, Date: time.Now().AddDate(0, 0, -1), CategoryID: 5},
+		{UserID: aliceID, Description: "Weekly grocery run", Amount: 125.50, Date: time.Now().AddDate(0, 0, -5), CategoryID: aliceCategories["Groceries"]},
+		{UserID: aliceID, Description: "Gas for car", Amount: 45.00, Date: time.Now().AddDate(0, 0, -4), CategoryID: aliceCategories["Transport"]},
+		{UserID: aliceID, Description: "Movie tickets", Amount: 32.00, Date: time.Now().AddDate(0, 0, -3), CategoryID: aliceCategories["Entertainment"]},
+		{UserID: aliceID, Description: "Electricity bill", Amount: 85.75, Date: time.Now().AddDate(0, 0, -2), CategoryID: aliceCategories["Utilities"]},
+		{UserID: aliceID, Description: "Monthly rent", Amount: 1200.00, Date: time.Now().AddDate(0, 0, -1), CategoryID: aliceCategories["Rent"]},
 	}
 	// Bob's Transactions (UserID: 2)
 	transactions = append(transactions,
-		Transaction{UserID: 2, Description: "Supermarket", Amount: 78.90, Date: time.Now().AddDate(0, 0, -6), CategoryID: 1},
-		Transaction{UserID: 2, Description: "Bus pass", Amount: 55.00, Date: time.Now().AddDate(0, 0, -5), CategoryID: 2},
-		Transaction{UserID: 2, Description: "Concert", Amount: 150.00, Date: time.Now().AddDate(0, 0, -2), CategoryID: 3},
-		Transaction{UserID: 2, Description: "Pharmacy", Amount: 25.30, Date: time.Now().AddDate(0, 0, -1), CategoryID: 6},
+		Transaction{UserID: bobID, Description: "Supermarket", Amount: 78.90, Date: time.Now().AddDate(0, 0, -6), CategoryID: bobCategories["Groceries"]},
+		Transaction{UserID: bobID, Description: "Monthly bus pass", Amount: 55.00, Date: time.Now().AddDate(0, 0, -5), CategoryID: bobCategories["Bus Pass"]},
+		Transaction{UserID: bobID, Description: "Rock concert", Amount: 150.00, Date: time.Now().AddDate(0, 0, -2), CategoryID: bobCategories["Concerts"]},
+		Transaction{UserID: bobID, Description: "Pharmacy", Amount: 25.30, Date: time.Now().AddDate(0, 0, -1), CategoryID: bobCategories["Health"]},
 	)
 
 	for _, t := range transactions {
@@ -73,35 +89,21 @@ func seedDatabase() error {
 	}
 	log.Println("Seeded transactions.")
 
-	// --- Seed Budgets ---
-	now := time.Now()
-	// Alice's Budgets (UserID: 1)
+	// --- Seed Budgets (Updated Schema) ---
 	budgets := []Budget{
-		{UserID: 1, CategoryID: 1, Amount: 500.00, Month: int(now.Month()), Year: now.Year()}, // Groceries
-		{UserID: 1, CategoryID: 2, Amount: 150.00, Month: int(now.Month()), Year: now.Year()}, // Transport
-		{UserID: 1, CategoryID: 3, Amount: 200.00, Month: int(now.Month()), Year: now.Year()}, // Entertainment
+		{UserID: aliceID, Period: time.Now(), Frequency: "monthly", Amount: 2500.00},
+		{UserID: aliceID, Period: time.Now(), Frequency: "yearly", Amount: 30000.00},
+		{UserID: bobID, Period: time.Now(), Frequency: "monthly", Amount: 2200.00},
 	}
-	// Bob's Budgets (UserID: 2)
-	budgets = append(budgets,
-		Budget{UserID: 2, CategoryID: 1, Amount: 400.00, Month: int(now.Month()), Year: now.Year()}, // Groceries
-	)
 
 	for _, b := range budgets {
-		_, err := db.Exec("INSERT INTO budgets (user_id, category_id, amount, month, year) VALUES ($1, $2, $3, $4, $5)",
-			b.UserID, b.CategoryID, b.Amount, b.Month, b.Year)
+		_, err := db.Exec("INSERT INTO budgets (user_id, period, frequency, amount) VALUES ($1, $2, $3, $4)",
+			b.UserID, b.Period, b.Frequency, b.Amount)
 		if err != nil {
 			return err
 		}
 	}
 	log.Println("Seeded budgets.")
-
-	// --- Seed Shared Budget ---
-	// Alice (UserID 1) shares her Entertainment budget (BudgetID 3) with Bob (UserID 2)
-	_, err = db.Exec("INSERT INTO shared_budgets (budget_id, from_user_id, to_user_id) VALUES (3, 1, 2)")
-	if err != nil {
-		return err
-	}
-	log.Println("Seeded shared budget.")
 
 	log.Println("Database seeding complete.")
 	return nil
