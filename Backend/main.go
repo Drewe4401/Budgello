@@ -41,28 +41,35 @@ func main() {
 	// Router
 	r := mux.NewRouter()
 
-	// API Routes
+	// --- User Routes ---
 	r.HandleFunc("/register", RegisterUser).Methods("POST")
 	r.HandleFunc("/login", LoginUser).Methods("POST")
+	r.HandleFunc("/users", GetAllUsers).Methods("GET")        // Typically admin-only
+	r.HandleFunc("/users/{id}", UpdateUser).Methods("PUT")    // Typically admin or self
+	r.HandleFunc("/users/{id}", DeleteUser).Methods("DELETE") // Typically admin or self
 
-	// Category Routes (New)
+	// --- Category Routes ---
 	r.HandleFunc("/categories", CreateCategory).Methods("POST")
 	r.HandleFunc("/categories/{user_id}", GetCategories).Methods("GET")
+	r.HandleFunc("/categories/{id}", UpdateCategory).Methods("PUT")
+	r.HandleFunc("/categories/{id}", DeleteCategory).Methods("DELETE")
 
+	// --- Transaction Routes ---
 	r.HandleFunc("/transactions", CreateTransaction).Methods("POST")
 	r.HandleFunc("/transactions/{user_id}", GetTransactions).Methods("GET")
+	r.HandleFunc("/transactions/{id}", UpdateTransaction).Methods("PUT")
+	r.HandleFunc("/transactions/{id}", DeleteTransaction).Methods("DELETE")
 
-	// Budget Routes - Updated
+	// --- Budget Routes ---
 	r.HandleFunc("/budgets", CreateBudget).Methods("POST")
 	r.HandleFunc("/budgets/{user_id}", GetBudgets).Methods("GET")
 	r.HandleFunc("/budgets/{id}", UpdateBudget).Methods("PUT")
 	r.HandleFunc("/budgets/{id}", DeleteBudget).Methods("DELETE")
 
-	// Sharing and Admin Routes
+	// --- Sharing Routes ---
 	r.HandleFunc("/budgets/share", ShareBudget).Methods("POST")
 	r.HandleFunc("/budgets/shared/{user_id}", GetSharedBudgets).Methods("GET")
-	adminRoutes := r.PathPrefix("/admin").Subrouter()
-	adminRoutes.HandleFunc("/users", GetAllUsers).Methods("GET")
+	r.HandleFunc("/budgets/share/{id}", DeleteSharedBudget).Methods("DELETE") // To unshare
 
 	// CORS Configuration
 	allowedOrigins := handlers.AllowedOrigins([]string{"http://localhost:5173"})

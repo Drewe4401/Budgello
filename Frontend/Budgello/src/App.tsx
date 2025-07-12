@@ -1,21 +1,22 @@
-import { useState, useEffect, createContext, useContext, useMemo } from 'react';
-import type { ReactNode, FC, FormEvent, MouseEvent } from 'react';
-import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts';
-import './App.css';
+import React, { useState, useEffect, createContext, useContext, useCallback } from 'react';
+import type { ReactNode, SetStateAction, Dispatch } from 'react';
+import { ResponsiveContainer, PieChart, Pie, Cell, Tooltip, Legend, LineChart, Line, XAxis, YAxis, CartesianGrid } from 'recharts';
+import { FilePlus, Edit, Trash2, LogOut, Menu, X, Users, DollarSign, BarChart2, Home, Search } from 'lucide-react';
+import './App.css'; // Assuming you have a CSS file for global styles
 
-// --- CONFIGURATION ---
-const API_URL = 'http://localhost:8080';
+// --- CONFIG ---
+const API_BASE_URL = 'http://localhost:8080';
 
 // --- TYPE DEFINITIONS ---
 interface User {
-  id: number;
-  username: string;
-  role: 'admin' | 'user';
-  password?: string;
+    id: number;
+    username: string;
+    role: 'admin' | 'user';
 }
 
 interface Category {
     id: number;
+    user_id: number;
     name: string;
 }
 
@@ -24,529 +25,1225 @@ interface Transaction {
     user_id: number;
     description: string;
     amount: number;
-    date: string;
+    date: string; // ISO string
     category_id: number;
 }
 
 interface Budget {
     id: number;
     user_id: number;
-    category_id: number;
+    period: string; // ISO string
+    frequency: 'weekly' | 'monthly' | 'yearly';
     amount: number;
-    month: number;
-    year: number;
 }
 
 interface AuthContextType {
-  user: User | null;
-  login: (userData: User) => void;
-  logout: () => void;
-  isAuthenticated: boolean;
+    user: User | null;
+    isAuthenticated: boolean;
+    isAdmin: boolean;
+    login: (userData: { user_id: number; role: 'admin' | 'user'; username: string }) => void;
+    logout: () => void;
+    loading: boolean;
 }
 
-interface DataContextType {
-    users: User[];
-    categories: Category[];
-    transactions: Transaction[];
-    budgets: Budget[];
-    isLoading: boolean;
-    fetchData: () => Promise<void>;
-    addTransaction: (newTransaction: Omit<Transaction, 'id' | 'date' | 'user_id'>) => Promise<void>;
-    createBudget: (newBudget: Omit<Budget, 'id' | 'user_id'>) => Promise<void>;
-    addUser: (newUser: Omit<User, 'id' | 'role'>) => Promise<void>;
-    getCategoryName: (id: number) => string;
-}
-
-type Page = 'dashboard' | 'users' | 'sharing';
-
-
-// --- ICONS ---
-const LogoutIcon: FC<{ className?: string }> = ({ className = "w-6 h-6" }) => (
-    <svg xmlns="http://www.w3.org/2000/svg" className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-        <path strokeLinecap="round" strokeLinejoin="round" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
-    </svg>
-);
-const PlusIcon: FC<{ className?: string }> = ({ className = "w-5 h-5" }) => (
-    <svg xmlns="http://www.w3.org/2000/svg" className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-        <path strokeLinecap="round" strokeLinejoin="round" d="M12 6v12m6-6H6" />
-    </svg>
-);
-const CloseIcon: FC<{ className?: string }> = ({ className = "w-6 h-6" }) => (
-    <svg xmlns="http://www.w3.org/2000/svg" className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-        <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
-    </svg>
-);
-const MenuIcon: FC<{ className?: string }> = ({ className = "w-6 h-6" }) => (
-    <svg xmlns="http://www.w3.org/2000/svg" className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-        <path strokeLinecap="round" strokeLinejoin="round" d="M4 6h16M4 12h16M4 18h16" />
-    </svg>
-);
-const DashboardIcon: FC<{ className?: string }> = ({ className = "w-6 h-6" }) => (
-    <svg xmlns="http://www.w3.org/2000/svg" className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-        <path strokeLinecap="round" strokeLinejoin="round" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
-    </svg>
-);
-const UsersIcon: FC<{ className?: string }> = ({ className = "w-6 h-6" }) => (
-     <svg xmlns="http://www.w3.org/2000/svg" className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-        <path strokeLinecap="round" strokeLinejoin="round" d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M15 21a6 6 0 00-9-5.197m0 0A4 4 0 019 10.146M12 4.354a4 4 0 010 5.292" />
-    </svg>
-);
-const ShareIcon: FC<{ className?: string }> = ({ className = "w-6 h-6" }) => (
-    <svg xmlns="http://www.w3.org/2000/svg" className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-        <path strokeLinecap="round" strokeLinejoin="round" d="M8.684 13.342C8.886 12.938 9 12.482 9 12s-.114-.938-.316-1.342m0 2.684a3 3 0 110-2.684m0 2.684l6.632 3.316m-6.632-6.002l6.632-3.316m0 0a3 3 0 105.367-2.684 3 3 0 00-5.367 2.684zm0 9.368a3 3 0 105.367 2.684 3 3 0 00-5.367-2.684z" />
-    </svg>
-);
-
-
-// --- CONTEXT PROVIDERS ---
+// --- AUTHENTICATION CONTEXT ---
 const AuthContext = createContext<AuthContextType | null>(null);
-const DataContext = createContext<DataContextType | null>(null);
 
-const useAuth = () => {
-    const context = useContext(AuthContext);
-    if (!context) throw new Error("useAuth must be used within an AuthProvider");
-    return context;
-};
-
-const useData = () => {
-    const context = useContext(DataContext);
-    if (!context) throw new Error("useData must be used within a DataProvider");
-    return context;
-};
-
-const AuthProvider: FC<{children: ReactNode}> = ({ children }) => {
+export const AuthProvider = ({ children }: { children: ReactNode }) => {
     const [user, setUser] = useState<User | null>(null);
-    const [isLoading, setIsLoading] = useState(true);
+    const [loading, setLoading] = useState(true);
 
     useEffect(() => {
-        setIsLoading(false);
+        try {
+            const storedUser = localStorage.getItem('budgelloUser');
+            const expiry = localStorage.getItem('budgelloExpiry');
+
+            if (storedUser && expiry && new Date().getTime() < Number(expiry)) {
+                setUser(JSON.parse(storedUser));
+            } else {
+                localStorage.removeItem('budgelloUser');
+                localStorage.removeItem('budgelloExpiry');
+            }
+        } catch (error) {
+            console.error("Failed to parse user from localStorage", error);
+        } finally {
+            setLoading(false);
+        }
     }, []);
 
-    const login = (userData: User) => setUser(userData);
-    const logout = () => setUser(null);
-
-    const value = { user, login, logout, isAuthenticated: !!user };
-
-    return <AuthContext.Provider value={value}>{isLoading ? <LoadingScreen /> : children}</AuthContext.Provider>;
-};
-
-const DataProvider: FC<{children: ReactNode}> = ({ children }) => {
-    const { user } = useAuth();
-    const [users, setUsers] = useState<User[]>([]);
-    const [categories, setCategories] = useState<Category[]>([]);
-    const [transactions, setTransactions] = useState<Transaction[]>([]);
-    const [budgets, setBudgets] = useState<Budget[]>([]);
-    const [isLoading, setIsLoading] = useState(true);
-
-    const getCategoryName = (id: number) => categories.find(c => c.id === id)?.name || 'Unknown';
-
-    const fetchData = async () => {
-        if (!user) return;
-        setIsLoading(true);
-        try {
-            const endpoints: { [key: string]: string } = {
-                transactions: `${API_URL}/transactions/${user.id}`,
-                budgets: `${API_URL}/budgets/${user.id}`,
-            };
-            if (user.role === 'admin') {
-                endpoints.users = `${API_URL}/admin/users`;
-            }
-
-            const [transRes, budgRes, usersRes] = await Promise.all([
-                fetch(endpoints.transactions),
-                fetch(endpoints.budgets),
-                user.role === 'admin' ? fetch(endpoints.users) : Promise.resolve(null),
-            ]);
-
-            const transData = await transRes.json();
-            const budgData = await budgRes.json();
-            
-            setTransactions(Array.isArray(transData) ? transData : []);
-            setBudgets(Array.isArray(budgData) ? budgData : []);
-            
-            if (usersRes) {
-                const usersData = await usersRes.json();
-                setUsers(Array.isArray(usersData) ? usersData : []);
-            }
-            
-            setCategories([
-                {id: 1, name: 'Groceries'}, {id: 2, name: 'Transport'}, {id: 3, name: 'Entertainment'},
-                {id: 4, name: 'Utilities'}, {id: 5, name: 'Rent'}, {id: 6, name: 'Health'}
-            ]);
-
-        } catch (error) {
-            console.error("Failed to fetch data:", error);
-            alert("Could not fetch data from the server.");
-        } finally {
-            setIsLoading(false);
-        }
-    };
-    
-    const addTransaction = async (newTransaction: Omit<Transaction, 'id' | 'date' | 'user_id'>) => {
-        if(!user) return;
-        await fetch(`${API_URL}/transactions`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ ...newTransaction, user_id: user.id, amount: +newTransaction.amount }),
-        });
-        await fetchData();
+    const login = (userData: { user_id: number; role: 'admin' | 'user'; username: string }) => {
+        const thirtyDays = 30 * 24 * 60 * 60 * 1000;
+        const expiry = new Date().getTime() + thirtyDays;
+        
+        const userToStore: User = { id: userData.user_id, role: userData.role, username: userData.username };
+        localStorage.setItem('budgelloUser', JSON.stringify(userToStore));
+        localStorage.setItem('budgelloExpiry', String(expiry));
+        setUser(userToStore);
     };
 
-    const addUser = async (newUser: Omit<User, 'id' | 'role'>) => {
-         await fetch(`${API_URL}/register`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(newUser),
-        });
-        await fetchData();
-    }
+    const logout = () => {
+        localStorage.removeItem('budgelloUser');
+        localStorage.removeItem('budgelloExpiry');
+        setUser(null);
+        window.location.hash = '/login';
+        window.location.reload();
+    };
 
-    useEffect(() => {
-        if (user) {
-            fetchData();
-        }
-    }, [user]);
+    const authContextValue: AuthContextType = {
+        user,
+        isAuthenticated: !!user,
+        isAdmin: user?.role === 'admin',
+        login,
+        logout,
+        loading
+    };
 
-    const value = { users, categories, transactions, budgets, isLoading, fetchData, addTransaction, createBudget: async () => {}, addUser, getCategoryName };
-
-    return <DataContext.Provider value={value}>{children}</DataContext.Provider>;
-};
-
-// --- REUSABLE UI COMPONENTS ---
-const AppButton: FC<React.ButtonHTMLAttributes<HTMLButtonElement>> = ({ className = '', ...props }) => (
-    <button className={`flex items-center justify-center px-4 py-2 font-semibold rounded-lg shadow-md focus:outline-none focus:ring-2 focus:ring-opacity-75 transition duration-200 ease-in-out disabled:cursor-not-allowed bg-blue-600 text-white hover:bg-blue-700 focus:ring-blue-400 disabled:bg-blue-300 ${className}`} {...props} />
-);
-const AppInput: FC<React.InputHTMLAttributes<HTMLInputElement>> = ({ className = '', ...props }) => (
-    <input className={`w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500 sm:text-sm ${className}`} {...props} />
-);
-const AppSelect: FC<React.SelectHTMLAttributes<HTMLSelectElement>> = ({ className = '', children, ...props }) => (
-    <select className={`w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500 sm:text-sm ${className}`} {...props}>{children}</select>
-);
-const Card: FC<{ children: ReactNode, className?: string }> = ({ children, className = '' }) => (
-    <div className={`bg-white rounded-xl shadow-lg p-4 sm:p-6 ${className}`}>{children}</div>
-);
-const Modal: FC<{ isOpen: boolean; onClose: () => void; title: string; children: ReactNode }> = ({ isOpen, onClose, title, children }) => {
-    if (!isOpen) return null;
     return (
-        <div className="fixed inset-0 bg-black bg-opacity-60 z-50 flex justify-center items-center p-4" onClick={onClose}>
-            <div className="bg-white rounded-xl shadow-2xl w-full max-w-md" onClick={(e) => e.stopPropagation()}>
-                <div className="flex justify-between items-center p-4 border-b border-gray-200">
-                    <h3 className="text-xl font-semibold text-gray-800">{title}</h3>
-                    <button onClick={onClose} className="text-gray-400 hover:text-gray-600"><CloseIcon /></button>
+        <AuthContext.Provider value={authContextValue}>
+            {children}
+        </AuthContext.Provider>
+    );
+};
+
+export const useAuth = () => {
+    const context = useContext(AuthContext);
+    if (!context) {
+        throw new Error('useAuth must be used within an AuthProvider');
+    }
+    return context;
+};
+
+// --- API SERVICE ---
+const api = {
+    async request<T>(endpoint: string, options: RequestInit = {}): Promise<T | null> {
+        const url = `${API_BASE_URL}${endpoint}`;
+        const headers = {
+            'Content-Type': 'application/json',
+            ...options.headers,
+        };
+
+        try {
+            const response = await fetch(url, { ...options, headers });
+            if (!response.ok) {
+                const errorData = await response.json().catch(() => ({ error: 'An unknown error occurred' }));
+                throw new Error(errorData.error || `HTTP error! status: ${response.status}`);
+            }
+            if (response.status === 204) {
+                return null;
+            }
+            return response.json() as Promise<T>;
+        } catch (error) {
+            console.error(`API request to ${endpoint} failed:`, error);
+            throw error;
+        }
+    },
+    // User
+    login: (username: string, password: string) => api.request<{ user_id: number; role: 'admin' | 'user', username: string }>('/login', { method: 'POST', body: JSON.stringify({ username, password }) }),
+    getUsers: () => api.request<User[]>('/users'),
+    updateUser: (id: number, data: Partial<User>) => api.request<User>(`/users/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
+    deleteUser: (id: number) => api.request<null>(`/users/${id}`, { method: 'DELETE' }),
+    registerUser: (username: string, password: string) => api.request<User>('/register', { method: 'POST', body: JSON.stringify({ username, password }) }),
+    // Categories
+    getCategories: (userId: number) => api.request<Category[]>(`/categories/${userId}`),
+    // Transactions
+    getTransactions: (userId: number) => api.request<Transaction[]>(`/transactions/${userId}`),
+    createTransaction: (data: Omit<Transaction, 'id'>) => api.request<Transaction>('/transactions', { method: 'POST', body: JSON.stringify(data) }),
+    updateTransaction: (id: number, data: Partial<Transaction>) => api.request<Transaction>(`/transactions/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
+    deleteTransaction: (id: number) => api.request<null>(`/transactions/${id}`, { method: 'DELETE' }),
+    // Budgets
+    getBudgets: (userId: number) => api.request<Budget[]>(`/budgets/${userId}`),
+    createBudget: (data: Omit<Budget, 'id'>) => api.request<Budget>('/budgets', { method: 'POST', body: JSON.stringify(data) }),
+    updateBudget: (id: number, data: Partial<Budget>) => api.request<Budget>(`/budgets/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
+    deleteBudget: (id: number) => api.request<null>(`/budgets/${id}`, { method: 'DELETE' }),
+};
+
+// --- REUSABLE COMPONENTS ---
+interface ModalProps {
+    isOpen: boolean;
+    onClose: () => void;
+    title: string;
+    children: ReactNode;
+}
+
+const Modal = ({ isOpen, onClose, title, children }: ModalProps) => {
+    if (!isOpen) return null;
+
+    return (
+        <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex justify-center items-center p-4">
+            <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl w-full max-w-md m-4">
+                <div className="flex justify-between items-center p-4 border-b dark:border-gray-700">
+                    <h3 className="text-xl font-semibold text-gray-800 dark:text-gray-100">{title}</h3>
+                    <button onClick={onClose} className="text-gray-500 hover:text-gray-800 dark:text-gray-400 dark:hover:text-gray-100">
+                        <X size={24} />
+                    </button>
                 </div>
-                <div className="p-6">{children}</div>
+                <div className="p-6">
+                    {children}
+                </div>
             </div>
         </div>
     );
 };
-const LoadingScreen: FC = () => (
-    <div className="flex items-center justify-center min-h-screen bg-slate-50">
-        <div className="text-center">
-            <svg className="mx-auto h-12 w-12 text-blue-600 animate-spin" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-            </svg>
-            <h2 className="mt-4 text-xl font-semibold text-gray-700">Loading Budgello...</h2>
-        </div>
+
+const Card = ({ children, className = '' }: { children: ReactNode, className?: string }) => (
+    <div className={`bg-white dark:bg-gray-800 rounded-lg shadow-md p-6 ${className}`}>
+        {children}
     </div>
 );
 
-
-// --- FORMS ---
-const AddTransactionForm: FC<{ onClose: () => void }> = ({ onClose }) => {
-    const { addTransaction, categories } = useData();
-    const [description, setDescription] = useState('');
-    const [amount, setAmount] = useState('');
-    const [categoryId, setCategoryId] = useState(categories[0]?.id.toString() || '');
-
-    const handleSubmit = async (e: FormEvent) => {
-        e.preventDefault();
-        await addTransaction({ description, amount: parseFloat(amount), category_id: parseInt(categoryId) });
-        onClose();
-    };
-    return (
-        <form onSubmit={handleSubmit} className="space-y-4">
-            <div>
-                <label htmlFor="description" className="block text-sm font-medium text-gray-700">Description</label>
-                <AppInput id="description" type="text" value={description} onChange={(e) => setDescription(e.target.value)} required />
-            </div>
-            <div>
-                <label htmlFor="amount" className="block text-sm font-medium text-gray-700">Amount</label>
-                <AppInput id="amount" type="number" step="0.01" value={amount} onChange={(e) => setAmount(e.target.value)} required />
-            </div>
-            <div>
-                <label htmlFor="category" className="block text-sm font-medium text-gray-700">Category</label>
-                <AppSelect id="category" value={categoryId} onChange={(e) => setCategoryId(e.target.value)} required>
-                    {categories.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
-                </AppSelect>
-            </div>
-            <AppButton type="submit" className="w-full">Add Transaction</AppButton>
-        </form>
-    );
-};
-const AddUserForm: FC<{ onClose: () => void }> = ({ onClose }) => {
-    const { addUser } = useData();
-    const [username, setUsername] = useState('');
-    const [password, setPassword] = useState('');
-    const handleSubmit = async (e: FormEvent) => {
-        e.preventDefault();
-        await addUser({ username, password });
-        onClose();
-    };
-    return (
-        <form onSubmit={handleSubmit} className="space-y-4">
-            <div>
-                <label htmlFor="new-username" className="block text-sm font-medium text-gray-700">Username</label>
-                <AppInput id="new-username" value={username} onChange={e => setUsername(e.target.value)} required />
-            </div>
-            <div>
-                <label htmlFor="new-password">Password</label>
-                <AppInput id="new-password" type="password" value={password} onChange={e => setPassword(e.target.value)} required />
-            </div>
-            <AppButton type="submit" className="w-full">Create User</AppButton>
-        </form>
-    );
+interface ButtonProps {
+    children: ReactNode;
+    onClick?: (event: React.MouseEvent<HTMLButtonElement>) => void;
+    className?: string;
+    variant?: 'primary' | 'secondary' | 'danger';
+    type?: 'button' | 'submit' | 'reset';
+    disabled?: boolean;
 }
 
-// --- LOGIN SCREEN ---
-const LoginScreen: FC = () => {
-    const [username, setUsername] = useState('alice');
-    const [password, setPassword] = useState('password123');
+const Button = ({ children, onClick, className = '', variant = 'primary', type = 'button', disabled = false }: ButtonProps) => {
+    const baseClasses = 'px-4 py-2 rounded-md font-semibold focus:outline-none focus:ring-2 focus:ring-offset-2 transition-colors duration-200 flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed';
+    const variants = {
+        primary: 'bg-blue-600 text-white hover:bg-blue-700 focus:ring-blue-500',
+        secondary: 'bg-gray-200 text-gray-800 hover:bg-gray-300 dark:bg-gray-700 dark:text-gray-200 dark:hover:bg-gray-600 focus:ring-gray-500',
+        danger: 'bg-red-600 text-white hover:bg-red-700 focus:ring-red-500',
+    };
+    return (
+        <button type={type} onClick={onClick} className={`${baseClasses} ${variants[variant]} ${className}`} disabled={disabled}>
+            {children}
+        </button>
+    );
+};
+
+const Input = (props: React.InputHTMLAttributes<HTMLInputElement>) => (
+    <input
+        {...props}
+        className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-gray-700 dark:border-gray-600 dark:text-white dark:focus:ring-blue-400"
+    />
+);
+
+const Select = ({ children, ...props }: React.SelectHTMLAttributes<HTMLSelectElement> & { children: ReactNode }) => (
+     <select
+        {...props}
+        className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-gray-700 dark:border-gray-600 dark:text-white dark:focus:ring-blue-400"
+    >
+        {children}
+    </select>
+);
+
+
+// --- PAGES ---
+
+const LoginPage = () => {
+    const [username, setUsername] = useState('');
+    const [password, setPassword] = useState('');
     const [error, setError] = useState('');
     const [isLoading, setIsLoading] = useState(false);
     const { login } = useAuth();
-    const handleLogin = async (e: FormEvent<HTMLFormElement>) => {
+
+    const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
-        setIsLoading(true);
         setError('');
+        setIsLoading(true);
         try {
-            const response = await fetch(`${API_URL}/login`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ username, password }) });
-            const data = await response.json();
-            if (response.ok && data.user_id && data.role) {
-                login({ id: data.user_id, role: data.role, username: username });
-            } else {
-                setError(data.message || 'Invalid credentials.');
+            const data = await api.login(username, password);
+            if (data) {
+                login({...data, username});
+                window.location.hash = '/dashboard';
             }
-        } catch (e) {
-            setError('Could not connect to the server.');
+        } catch (err: any) {
+            setError(err.message || 'Login failed. Please check your credentials.');
         } finally {
             setIsLoading(false);
         }
     };
+
     return (
-        <div className="min-h-screen bg-slate-50 flex flex-col justify-center items-center p-4">
-            <div className="w-full max-w-sm">
-                <div className="text-center mb-8">
-                    <h1 className="text-5xl font-bold text-blue-600">Budgello</h1>
-                    <p className="mt-2 text-lg text-gray-500">Your finances, simplified.</p>
+        <div className="flex items-center justify-center min-h-screen bg-gray-100 dark:bg-gray-900">
+            <div className="w-full max-w-md p-8 space-y-6 bg-white rounded-lg shadow-md dark:bg-gray-800">
+                <div className="text-center">
+                    <h1 className="text-3xl font-bold text-gray-900 dark:text-white">Welcome to Budgello</h1>
+                    <p className="mt-2 text-gray-600 dark:text-gray-400">Sign in to your account</p>
                 </div>
-                <Card className="shadow-2xl">
-                    <form onSubmit={handleLogin} className="space-y-6">
-                        {error && <p className="text-center text-red-600 bg-red-100 p-3 rounded-lg text-sm">{error}</p>}
-                        <div>
-                            <label htmlFor="username" className="sr-only">Username</label>
-                            <AppInput id="username" type="text" placeholder="Username" value={username} onChange={(e) => setUsername(e.target.value)} />
-                        </div>
-                        <div>
-                            <label htmlFor="password-input" className="sr-only">Password</label>
-                            <AppInput id="password-input" type="password" placeholder="Password" value={password} onChange={(e) => setPassword(e.target.value)} />
-                        </div>
-                        <AppButton type="submit" className="w-full py-3" disabled={isLoading}>{isLoading ? 'Logging in...' : 'Login'}</AppButton>
-                    </form>
-                </Card>
+                <form className="space-y-6" onSubmit={handleSubmit}>
+                    <div>
+                        <label htmlFor="username" className="text-sm font-medium text-gray-700 dark:text-gray-300">Username</label>
+                        <Input
+                            id="username"
+                            type="text"
+                            value={username}
+                            onChange={(e) => setUsername(e.target.value)}
+                            required
+                            placeholder="e.g., alice"
+                            className="mt-1"
+                        />
+                    </div>
+                    <div>
+                        <label htmlFor="password-login" className="text-sm font-medium text-gray-700 dark:text-gray-300">Password</label>
+                         <Input
+                            id="password-login"
+                            type="password"
+                            value={password}
+                            onChange={(e) => setPassword(e.target.value)}
+                            required
+                            placeholder="••••••••"
+                            className="mt-1"
+                        />
+                    </div>
+                    {error && <p className="text-sm text-red-600 dark:text-red-400">{error}</p>}
+                    <div>
+                        <Button type="submit" className="w-full" disabled={isLoading}>
+                            {isLoading ? 'Signing In...' : 'Sign In'}
+                        </Button>
+                    </div>
+                </form>
             </div>
         </div>
     );
 };
 
-// --- DASHBOARD PAGES ---
-const DashboardPage: FC = () => {
-    const { transactions, budgets, isLoading, getCategoryName } = useData();
-    const [isModalOpen, setIsModalOpen] = useState(false);
+// --- DASHBOARD HELPER COMPONENTS & FUNCTIONS ---
+const getStartOfWeek = (date: Date) => {
+    const d = new Date(date);
+    const day = d.getDay();
+    const diff = d.getDate() - day + (day === 0 ? -6 : 1); // adjust when day is sunday
+    return new Date(d.setDate(diff));
+};
 
-    const spendingByCategory = useMemo(() => {
-        const dataMap = new Map<string, number>();
-        transactions.forEach(t => {
-            const categoryName = getCategoryName(t.category_id);
-            dataMap.set(categoryName, (dataMap.get(categoryName) || 0) + t.amount);
-        });
-        return Array.from(dataMap, ([name, value]) => ({ name, value }));
-    }, [transactions, getCategoryName]);
-    
-    const COLORS = ['#0088FE', '#00C49F', '#FFBB28', '#FF8042', '#8884d8', '#82ca9d'];
+const getStartOfMonth = (date: Date) => new Date(date.getFullYear(), date.getMonth(), 1);
+const getStartOfYear = (date: Date) => new Date(date.getFullYear(), 0, 1);
 
-    if (isLoading) return <p>Loading dashboard...</p>;
+const SpendingSummaryCard = ({ title, spent, budget }: { title: string, spent: number, budget: number }) => {
+    const remaining = budget - spent;
+    const progress = budget > 0 ? (spent / budget) * 100 : 0;
+    const isOverBudget = spent > budget;
 
     return (
-        <div className="space-y-6">
-            <Modal isOpen={isModalOpen} onClose={() => setIsModalOpen(false)} title="Add New Transaction">
-                <AddTransactionForm onClose={() => setIsModalOpen(false)} />
-            </Modal>
+        <Card>
+            <h3 className="font-bold text-lg capitalize text-gray-800 dark:text-gray-100">{title}</h3>
+            <div className="mt-4 space-y-2">
+                <div className="flex justify-between text-sm">
+                    <span className="text-gray-600 dark:text-gray-300">Spent</span>
+                    <span className="font-semibold text-gray-800 dark:text-gray-100">${spent.toFixed(2)}</span>
+                </div>
+                <div className="flex justify-between text-sm">
+                    <span className="text-gray-600 dark:text-gray-300">Budget</span>
+                    <span className="font-semibold text-gray-800 dark:text-gray-100">${budget.toFixed(2)}</span>
+                </div>
+                 <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-2.5 my-2">
+                    <div 
+                        className={`h-2.5 rounded-full ${isOverBudget ? 'bg-red-500' : 'bg-blue-600'}`} 
+                        style={{ width: `${Math.min(progress, 100)}%` }}
+                    ></div>
+                </div>
+                <div className="flex justify-between text-sm font-bold">
+                    <span className={isOverBudget ? 'text-red-500' : 'text-gray-600 dark:text-gray-300'}>
+                        {isOverBudget ? 'Over Budget' : 'Remaining'}
+                    </span>
+                    <span className={isOverBudget ? 'text-red-500' : 'text-green-600 dark:text-green-400'}>
+                        ${Math.abs(remaining).toFixed(2)}
+                    </span>
+                </div>
+            </div>
+        </Card>
+    );
+};
+
+
+const DashboardPage = () => {
+    const { user } = useAuth();
+    const [budgets, setBudgets] = useState<Budget[]>([]);
+    const [transactions, setTransactions] = useState<Transaction[]>([]);
+    const [categories, setCategories] = useState<Category[]>([]);
+    const [loading, setLoading] = useState(true);
+    const [chartView, setChartView] = useState<'weekly' | 'monthly' | 'yearly'>('monthly');
+
+    useEffect(() => {
+        const fetchData = async () => {
+            if (!user) return;
+            try {
+                setLoading(true);
+                const [budgetsData, transactionsData, categoriesData] = await Promise.all([
+                    api.getBudgets(user.id),
+                    api.getTransactions(user.id),
+                    api.getCategories(user.id)
+                ]);
+                setBudgets(budgetsData || []);
+                setTransactions(transactionsData || []);
+                setCategories(categoriesData || []);
+            } catch (error) {
+                console.error("Failed to fetch dashboard data:", error);
+            } finally {
+                setLoading(false);
+            }
+        };
+        fetchData();
+    }, [user]);
+
+    const now = new Date();
+    const startOfWeek = getStartOfWeek(now);
+    const startOfMonth = getStartOfMonth(now);
+    const startOfYear = getStartOfYear(now);
+
+    const weeklyBudget = budgets.find(b => b.frequency === 'weekly')?.amount || 0;
+    const monthlyBudget = budgets.find(b => b.frequency === 'monthly')?.amount || 0;
+    const yearlyBudget = budgets.find(b => b.frequency === 'yearly')?.amount || 0;
+
+    const weeklySpending = transactions
+        .filter(t => new Date(t.date) >= startOfWeek)
+        .reduce((sum, t) => sum + t.amount, 0);
+    const monthlySpending = transactions
+        .filter(t => new Date(t.date) >= startOfMonth)
+        .reduce((sum, t) => sum + t.amount, 0);
+    const yearlySpending = transactions
+        .filter(t => new Date(t.date) >= startOfYear)
+        .reduce((sum, t) => sum + t.amount, 0);
+
+    const categoryMap = React.useMemo(() => categories.reduce((acc, cat) => {
+        acc[cat.id] = cat.name;
+        return acc;
+    }, {} as Record<number, string>), [categories]);
+
+    const spendingByCategory = React.useMemo(() => transactions.reduce((acc, t) => {
+        const categoryName = categoryMap[t.category_id] || 'Uncategorized';
+        if (!acc[categoryName]) acc[categoryName] = 0;
+        acc[categoryName] += t.amount;
+        return acc;
+    }, {} as Record<string, number>), [transactions, categoryMap]);
+
+    const pieChartData = Object.entries(spendingByCategory).map(([name, value]) => ({ name, value }));
+    const COLORS = ['#0088FE', '#00C49F', '#FFBB28', '#FF8042', '#AF19FF', '#FF1955'];
+
+    const lineChartData = React.useMemo(() => {
+        let data: { name: string; spent: number }[] = [];
+        const filteredTransactions = transactions.filter(t => {
+            const tDate = new Date(t.date);
+            if (chartView === 'weekly') return tDate >= startOfWeek;
+            if (chartView === 'monthly') return tDate >= startOfMonth;
+            if (chartView === 'yearly') return tDate >= startOfYear;
+            return false;
+        });
+
+        if (chartView === 'weekly') {
+            const days = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+            data = days.map(day => ({ name: day, spent: 0 }));
+            filteredTransactions.forEach(t => {
+                const dayIndex = new Date(t.date).getDay();
+                data[dayIndex].spent += t.amount;
+            });
+        } else if (chartView === 'monthly') {
+            const daysInMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
+            data = Array.from({ length: daysInMonth }, (_, i) => ({ name: String(i + 1), spent: 0 }));
+            filteredTransactions.forEach(t => {
+                const dayOfMonth = new Date(t.date).getDate();
+                data[dayOfMonth - 1].spent += t.amount;
+            });
+        } else if (chartView === 'yearly') {
+            const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+            data = months.map(month => ({ name: month, spent: 0 }));
+            filteredTransactions.forEach(t => {
+                const monthIndex = new Date(t.date).getMonth();
+                data[monthIndex].spent += t.amount;
+            });
+        }
+        return data;
+    }, [transactions, chartView, now, startOfWeek, startOfMonth, startOfYear]);
+
+
+    if (loading) return <div className="text-center p-8">Loading dashboard...</div>;
+
+    return (
+        <div className="p-4 md:p-6 lg:p-8 space-y-8">
+            <h1 className="text-3xl font-bold text-gray-800 dark:text-gray-100">Dashboard</h1>
             
-            <div className="flex justify-between items-center">
-                <h2 className="text-3xl font-bold text-gray-800">Dashboard</h2>
-                <AppButton onClick={() => setIsModalOpen(true)}><PlusIcon className="mr-2" /> Add Transaction</AppButton>
-            </div>
-
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-                <Card><h3 className="text-gray-500">Total Spent</h3><p className="text-2xl font-bold">${transactions.reduce((s, t) => s + t.amount, 0).toFixed(2)}</p></Card>
-                <Card><h3 className="text-gray-500">Transactions</h3><p className="text-2xl font-bold">{transactions.length}</p></Card>
-                <Card><h3 className="text-gray-500">Budgets Set</h3><p className="text-2xl font-bold">{budgets.length}</p></Card>
-                <Card><h3 className="text-gray-500">Budget Total</h3><p className="text-2xl font-bold">${budgets.reduce((s, b) => s + b.amount, 0).toFixed(2)}</p></Card>
-            </div>
-
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            <section>
+                <h2 className="text-2xl font-semibold mb-4 text-gray-700 dark:text-gray-200">Spending Overview</h2>
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                    <SpendingSummaryCard title="This Week" spent={weeklySpending} budget={weeklyBudget} />
+                    <SpendingSummaryCard title="This Month" spent={monthlySpending} budget={monthlyBudget} />
+                    <SpendingSummaryCard title="This Year" spent={yearlySpending} budget={yearlyBudget} />
+                </div>
+            </section>
+            
+            <section>
+                <div className="flex justify-between items-center mb-4">
+                    <h2 className="text-2xl font-semibold text-gray-700 dark:text-gray-200">Spending Trend</h2>
+                    <div className="flex gap-1 bg-gray-200 dark:bg-gray-700 p-1 rounded-md">
+                        {(['weekly', 'monthly', 'yearly'] as const).map(view => (
+                            <button 
+                                key={view}
+                                onClick={() => setChartView(view)}
+                                className={`px-3 py-1 text-sm font-semibold rounded-md transition-colors ${chartView === view ? 'bg-white dark:bg-gray-600 text-blue-600 dark:text-white' : 'text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-600/50'}`}
+                            >
+                                {view.charAt(0).toUpperCase() + view.slice(1)}
+                            </button>
+                        ))}
+                    </div>
+                </div>
                 <Card>
-                    <h3 className="text-xl font-semibold text-gray-800 mb-4">Spending by Category</h3>
-                     <ResponsiveContainer width="100%" height={300}>
-                        <PieChart>
-                            <Pie data={spendingByCategory} dataKey="value" nameKey="name" cx="50%" cy="50%" outerRadius={100} fill="#8884d8" label>
-                                {spendingByCategory.map((entry, index) => <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />)}
-                            </Pie>
-                            <Tooltip />
+                    <ResponsiveContainer width="100%" height={300}>
+                        <LineChart data={lineChartData} margin={{ top: 5, right: 20, left: -10, bottom: 5 }}>
+                            <CartesianGrid strokeDasharray="3 3" strokeOpacity={0.2} />
+                            <XAxis dataKey="name" />
+                            <YAxis />
+                            <Tooltip formatter={(value: number) => `$${value.toFixed(2)}`} />
                             <Legend />
-                        </PieChart>
+                            <Line type="monotone" dataKey="spent" stroke="#8884d8" strokeWidth={2} />
+                        </LineChart>
                     </ResponsiveContainer>
                 </Card>
-                 <Card>
-                    <h3 className="text-xl font-semibold text-gray-800 mb-4">Recent Transactions</h3>
-                    <ul className="space-y-3 max-h-80 overflow-y-auto">
-                        {transactions.map(t => (
-                            <li key={t.id} className="flex justify-between items-center p-3 bg-gray-50 rounded-md">
-                                <div><span className="font-medium text-gray-800">{t.description}</span><span className="block text-sm text-gray-500">{getCategoryName(t.category_id)}</span></div>
-                                <span className="text-red-600 font-semibold">-${t.amount.toFixed(2)}</span>
-                            </li>
-                        ))}
-                    </ul>
-                </Card>
-            </div>
-        </div>
-    );
-};
+            </section>
 
-const UserManagementPage: FC = () => {
-    const { users, isLoading } = useData();
-    const [isModalOpen, setIsModalOpen] = useState(false);
-    if (isLoading) return <p>Loading users...</p>;
-
-    return (
-        <div className="space-y-6">
-            <Modal isOpen={isModalOpen} onClose={() => setIsModalOpen(false)} title="Create New User"><AddUserForm onClose={() => setIsModalOpen(false)} /></Modal>
-            <div className="flex justify-between items-center">
-                <h2 className="text-3xl font-bold text-gray-800">User Management</h2>
-                <AppButton onClick={() => setIsModalOpen(true)}><PlusIcon className="mr-2" /> Add User</AppButton>
-            </div>
-            <Card>
-                <div className="overflow-x-auto">
-                    <table className="min-w-full divide-y divide-gray-200">
-                        <thead className="bg-gray-50">
-                            <tr>
-                                <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">ID</th>
-                                <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Username</th>
-                                <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Role</th>
-                            </tr>
-                        </thead>
-                        <tbody className="bg-white divide-y divide-gray-200">
-                            {users.map(u => (
-                                <tr key={u.id}>
-                                    <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">{u.id}</td>
-                                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{u.username}</td>
-                                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                                        <span className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${u.role === 'admin' ? 'bg-green-100 text-green-800' : 'bg-blue-100 text-blue-800'}`}>{u.role}</span>
-                                    </td>
-                                </tr>
+            <div className="grid grid-cols-1 lg:grid-cols-5 gap-8">
+                <section className="lg:col-span-3">
+                    <h2 className="text-2xl font-semibold mb-4 text-gray-700 dark:text-gray-200">Recent Transactions</h2>
+                    <Card>
+                        <div className="space-y-4">
+                            {transactions.slice(0, 5).map(t => (
+                                <div key={t.id} className="flex justify-between items-center p-2 rounded-md hover:bg-gray-50 dark:hover:bg-gray-700">
+                                    <div>
+                                        <p className="font-semibold text-gray-800 dark:text-gray-100">{t.description}</p>
+                                        <p className="text-sm text-gray-500 dark:text-gray-400">{new Date(t.date).toLocaleDateString()}</p>
+                                    </div>
+                                    <p className="font-bold text-lg text-red-500">-${t.amount.toFixed(2)}</p>
+                                </div>
                             ))}
-                        </tbody>
-                    </table>
-                </div>
-            </Card>
+                            {transactions.length === 0 && <p className="text-gray-500 dark:text-gray-400">No transactions yet.</p>}
+                        </div>
+                    </Card>
+                </section>
+
+                <section className="lg:col-span-2">
+                    <h2 className="text-2xl font-semibold mb-4 text-gray-700 dark:text-gray-200">Spending by Category</h2>
+                    <Card>
+                        <ResponsiveContainer width="100%" height={300}>
+                            <PieChart>
+                                <Pie data={pieChartData} dataKey="value" nameKey="name" cx="50%" cy="50%" outerRadius={100} fill="#8884d8" label>
+                                    {pieChartData.map((_entry, index) => (
+                                        <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+                                    ))}
+                                </Pie>
+                                <Tooltip formatter={(value: number) => `$${value.toFixed(2)}`} />
+                                <Legend />
+                            </PieChart>
+                        </ResponsiveContainer>
+                    </Card>
+                </section>
+            </div>
         </div>
     );
 };
 
-const SharedBudgetsPage: FC = () => (
-    <div>
-        <h2 className="text-3xl font-bold text-gray-800">Shared Budgets</h2>
-        <Card className="mt-6">
-            <p className="text-gray-500">This feature is under construction. Admins will be able to manage budget sharing permissions here.</p>
-        </Card>
-    </div>
-);
+const BudgetPage = () => {
+    const { user } = useAuth();
+    const [budgets, setBudgets] = useState<Budget[]>([]);
+    const [isModalOpen, setIsModalOpen] = useState(false);
+    const [editingBudget, setEditingBudget] = useState<Budget | null>(null);
+    const [loading, setLoading] = useState(true);
 
-// --- LAYOUT & NAVIGATION ---
-const AppLayout: FC = () => {
-    const { user, logout } = useAuth();
-    const [page, setPage] = useState<Page>('dashboard');
-    const [isSidebarOpen, setIsSidebarOpen] = useState(false);
+    const fetchBudgets = useCallback(async () => {
+        if (!user) return;
+        try {
+            setLoading(true);
+            const data = await api.getBudgets(user.id);
+            setBudgets(data || []);
+        } catch (error) {
+            console.error("Failed to fetch budgets:", error);
+        } finally {
+            setLoading(false);
+        }
+    }, [user]);
 
-    const NavLink: FC<{children: ReactNode, icon: ReactNode, target: Page}> = ({ children, icon, target }) => (
-        <a href="#" onClick={(e) => { e.preventDefault(); setPage(target); setIsSidebarOpen(false); }} className={`flex items-center px-4 py-3 text-lg rounded-lg transition-colors ${page === target ? 'bg-blue-600 text-white' : 'text-gray-600 hover:bg-gray-200'}`}>
-            <span className="mr-3">{icon}</span>{children}
-        </a>
-    );
+    useEffect(() => {
+        fetchBudgets();
+    }, [fetchBudgets]);
 
-    const renderPage = () => {
-        switch (page) {
-            case 'users': return <UserManagementPage />;
-            case 'sharing': return <SharedBudgetsPage />;
-            case 'dashboard':
-            default: return <DashboardPage />;
+    const handleOpenModal = (budget: Budget | null = null) => {
+        setEditingBudget(budget);
+        setIsModalOpen(true);
+    };
+
+    const handleCloseModal = () => {
+        setIsModalOpen(false);
+        setEditingBudget(null);
+    };
+
+    const handleSave = async (formData: { frequency: Budget['frequency'], amount: string }) => {
+        if (!user) return;
+        const budgetData = {
+            user_id: user.id,
+            amount: parseFloat(formData.amount),
+            frequency: formData.frequency,
+            period: new Date().toISOString()
+        };
+        
+        try {
+            if (editingBudget) {
+                await api.updateBudget(editingBudget.id, budgetData);
+            } else {
+                await api.createBudget(budgetData);
+            }
+            fetchBudgets();
+            handleCloseModal();
+        } catch (error: any) {
+            alert(`Error saving budget: ${error.message}`);
         }
     };
 
-    return (
-        <div className="flex h-screen bg-gray-100">
-            {/* Sidebar */}
-            <aside className={`fixed inset-y-0 left-0 bg-white shadow-lg w-64 p-4 transform transition-transform z-30 ${isSidebarOpen ? 'translate-x-0' : '-translate-x-full'} lg:relative lg:translate-x-0`}>
-                <h1 className="text-3xl font-bold text-blue-600 px-4 mb-8">Budgello</h1>
-                <nav className="space-y-2">
-                    <NavLink icon={<DashboardIcon />} target="dashboard">Dashboard</NavLink>
-                    {user?.role === 'admin' && (
-                        <>
-                            <NavLink icon={<UsersIcon />} target="users">Users</NavLink>
-                            <NavLink icon={<ShareIcon />} target="sharing">Sharing</NavLink>
-                        </>
-                    )}
-                </nav>
-                <div className="absolute bottom-4 left-4 right-4">
-                     <div className="p-3 rounded-lg bg-gray-100 text-center text-sm">
-                        <p className="font-semibold text-gray-800">{user?.username}</p>
-                        <p className="text-gray-500">{user?.role}</p>
-                    </div>
-                </div>
-            </aside>
+    const handleDelete = async (id: number) => {
+        if (window.confirm('Are you sure you want to delete this budget?')) {
+            try {
+                await api.deleteBudget(id);
+                fetchBudgets();
+            } catch (error: any) {
+                alert(`Error deleting budget: ${error.message}`);
+            }
+        }
+    };
 
-            {/* Main Content */}
-            <div className="flex-1 flex flex-col overflow-hidden">
-                <header className="bg-white shadow-sm lg:hidden">
-                    <div className="flex items-center justify-between p-4">
-                        <button onClick={() => setIsSidebarOpen(true)} className="text-gray-500 focus:outline-none"><MenuIcon /></button>
-                        <h1 className="text-xl font-bold text-blue-600">Budgello</h1>
-                        <button onClick={logout} className="text-gray-500 focus:outline-none"><LogoutIcon /></button>
-                    </div>
-                </header>
-                <main className="flex-1 overflow-x-hidden overflow-y-auto bg-gray-100 p-4 sm:p-6">
-                    {renderPage()}
-                </main>
+    const existingFrequencies = budgets.map(b => b.frequency);
+
+    return (
+        <div className="p-4 md:p-6 lg:p-8">
+            <div className="flex justify-between items-center mb-8">
+                <h1 className="text-3xl font-bold text-gray-800 dark:text-gray-100">Budgets</h1>
+                <Button onClick={() => handleOpenModal()} disabled={existingFrequencies.length >= 3}>
+                    <FilePlus size={20} /> New Budget
+                </Button>
             </div>
+
+            {loading ? <p>Loading budgets...</p> : (
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                {budgets.map(budget => (
+                    <Card key={budget.id} className="flex flex-col justify-between">
+                        <div>
+                            <h2 className="text-xl font-semibold capitalize text-blue-600 dark:text-blue-400">{budget.frequency}</h2>
+                            <p className="text-4xl font-bold my-4 text-gray-800 dark:text-gray-100">${budget.amount.toFixed(2)}</p>
+                        </div>
+                        <div className="flex gap-2 mt-4">
+                            <Button onClick={() => handleOpenModal(budget)} variant="secondary" className="w-full">
+                                <Edit size={16} /> Edit
+                            </Button>
+                            <Button onClick={() => handleDelete(budget.id)} variant="danger" className="w-full">
+                                <Trash2 size={16} /> Delete
+                            </Button>
+                        </div>
+                    </Card>
+                ))}
+                {budgets.length === 0 && <p className="text-gray-500 dark:text-gray-400">You haven't set any budgets yet.</p>}
+            </div>
+            )}
+
+            <BudgetForm
+                isOpen={isModalOpen}
+                onClose={handleCloseModal}
+                onSave={handleSave}
+                budget={editingBudget}
+                existingFrequencies={existingFrequencies}
+            />
         </div>
     );
 };
 
-// --- APP ENTRY POINT ---
-function App() {
+interface BudgetFormProps {
+    isOpen: boolean;
+    onClose: () => void;
+    onSave: (data: { frequency: Budget['frequency'], amount: string }) => void;
+    budget: Budget | null;
+    existingFrequencies: string[];
+}
+
+const BudgetForm = ({ isOpen, onClose, onSave, budget, existingFrequencies }: BudgetFormProps) => {
+    const [frequency, setFrequency] = useState<Budget['frequency'] | ''>('');
+    const [amount, setAmount] = useState('');
+
+    useEffect(() => {
+        if (budget) {
+            setFrequency(budget.frequency);
+            setAmount(String(budget.amount));
+        } else {
+            setFrequency('');
+            setAmount('');
+        }
+    }, [budget]);
+
+    const handleSubmit = (e: React.FormEvent) => {
+        e.preventDefault();
+        if (frequency) {
+            onSave({ frequency, amount });
+        }
+    };
+
+    const availableFrequencies = (['weekly', 'monthly', 'yearly'] as const).filter(
+        f => !existingFrequencies.includes(f) || (budget && f === budget.frequency)
+    );
+
+    return (
+        <Modal isOpen={isOpen} onClose={onClose} title={budget ? 'Edit Budget' : 'Add Budget'}>
+            <form onSubmit={handleSubmit} className="space-y-4">
+                <div>
+                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Frequency</label>
+                    <Select value={frequency} onChange={e => setFrequency(e.target.value as Budget['frequency'])} required disabled={!!budget}>
+                        <option value="" disabled>Select frequency</option>
+                        {budget && <option value={budget.frequency}>{budget.frequency}</option>}
+                        {availableFrequencies.map(f => <option key={f} value={f}>{f}</option>)}
+                    </Select>
+                </div>
+                <div>
+                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Amount</label>
+                    <Input type="number" value={amount} onChange={e => setAmount(e.target.value)} required placeholder="e.g., 500.00" step="0.01"/>
+                </div>
+                <div className="flex justify-end gap-3 pt-4">
+                    <Button onClick={onClose} variant="secondary" type="button">Cancel</Button>
+                    <Button type="submit">Save Budget</Button>
+                </div>
+            </form>
+        </Modal>
+    );
+};
+
+
+const TransactionsPage = () => {
+    const { user } = useAuth();
+    const [transactions, setTransactions] = useState<Transaction[]>([]);
+    const [categories, setCategories] = useState<Category[]>([]);
+    const [isModalOpen, setIsModalOpen] = useState(false);
+    const [editingTransaction, setEditingTransaction] = useState<Transaction | null>(null);
+    const [loading, setLoading] = useState(true);
+    const [searchTerm, setSearchTerm] = useState('');
+
+    const fetchAllData = useCallback(async () => {
+        if (!user) return;
+        try {
+            setLoading(true);
+            const [transData, catData] = await Promise.all([
+                api.getTransactions(user.id),
+                api.getCategories(user.id)
+            ]);
+            setTransactions(transData || []);
+            setCategories(catData || []);
+        } catch (error) {
+            console.error("Failed to fetch data:", error);
+        } finally {
+            setLoading(false);
+        }
+    }, [user]);
+
+    useEffect(() => {
+        fetchAllData();
+    }, [fetchAllData]);
+
+    const handleOpenModal = (transaction: Transaction | null = null) => {
+        setEditingTransaction(transaction);
+        setIsModalOpen(true);
+    };
+
+    const handleCloseModal = () => {
+        setIsModalOpen(false);
+        setEditingTransaction(null);
+    };
+
+    const handleSave = async (formData: Omit<Transaction, 'id' | 'user_id'>) => {
+        if (!user) return;
+        const transactionData = {
+            ...formData,
+            user_id: user.id,
+            amount: parseFloat(String(formData.amount)),
+            category_id: parseInt(String(formData.category_id), 10),
+            date: new Date(formData.date).toISOString()
+        };
+        try {
+            if (editingTransaction) {
+                await api.updateTransaction(editingTransaction.id, transactionData);
+            } else {
+                await api.createTransaction(transactionData);
+            }
+            fetchAllData();
+            handleCloseModal();
+        } catch (error: any) {
+            alert(`Error saving transaction: ${error.message}`);
+        }
+    };
+
+    const handleDelete = async (id: number) => {
+        if (window.confirm('Are you sure you want to delete this transaction?')) {
+            try {
+                await api.deleteTransaction(id);
+                fetchAllData();
+            } catch (error: any) {
+                alert(`Error deleting transaction: ${error.message}`);
+            }
+        }
+    };
+    
+    const categoryMap = categories.reduce((acc, cat) => {
+        acc[cat.id] = cat.name;
+        return acc;
+    }, {} as Record<number, string>);
+
+    const filteredTransactions = transactions.filter(t => 
+        t.description.toLowerCase().includes(searchTerm.toLowerCase())
+    );
+
+    return (
+        <div className="p-4 md:p-6 lg:p-8">
+            <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-8 gap-4">
+                <h1 className="text-3xl font-bold text-gray-800 dark:text-gray-100">Transactions</h1>
+                <div className="flex gap-4 w-full md:w-auto">
+                    <div className="relative flex-grow">
+                        <Input 
+                            type="text"
+                            placeholder="Search transactions..."
+                            value={searchTerm}
+                            onChange={(e) => setSearchTerm(e.target.value)}
+                            className="pl-10"
+                        />
+                        <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={20}/>
+                    </div>
+                    <Button onClick={() => handleOpenModal()}>
+                        <FilePlus size={20} /> New
+                    </Button>
+                </div>
+            </div>
+
+            <Card className="overflow-x-auto">
+                {loading ? <p>Loading transactions...</p> : (
+                <table className="w-full text-left">
+                    <thead className="border-b dark:border-gray-700">
+                        <tr>
+                            <th className="p-4 text-sm font-semibold text-gray-600 dark:text-gray-300">Description</th>
+                            <th className="p-4 text-sm font-semibold text-gray-600 dark:text-gray-300">Amount</th>
+                            <th className="p-4 text-sm font-semibold text-gray-600 dark:text-gray-300">Category</th>
+                            <th className="p-4 text-sm font-semibold text-gray-600 dark:text-gray-300">Date</th>
+                            <th className="p-4 text-sm font-semibold text-gray-600 dark:text-gray-300">Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {filteredTransactions.map(t => (
+                            <tr key={t.id} className="border-b dark:border-gray-700 last:border-b-0 hover:bg-gray-50 dark:hover:bg-gray-700/50">
+                                <td className="p-4 text-gray-800 dark:text-gray-100">{t.description}</td>
+                                <td className="p-4 text-red-600 dark:text-red-400 font-semibold">${t.amount.toFixed(2)}</td>
+                                <td className="p-4 text-gray-600 dark:text-gray-300">{categoryMap[t.category_id] || 'Uncategorized'}</td>
+                                <td className="p-4 text-gray-600 dark:text-gray-300">{new Date(t.date).toLocaleDateString()}</td>
+                                <td className="p-4">
+                                    <div className="flex gap-2">
+                                        <button onClick={() => handleOpenModal(t)} className="text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300"><Edit size={18} /></button>
+                                        <button onClick={() => handleDelete(t.id)} className="text-red-600 hover:text-red-800 dark:text-red-400 dark:hover:text-red-300"><Trash2 size={18} /></button>
+                                    </div>
+                                </td>
+                            </tr>
+                        ))}
+                    </tbody>
+                </table>
+                )}
+                {!loading && filteredTransactions.length === 0 && <p className="p-4 text-center text-gray-500 dark:text-gray-400">No transactions found.</p>}
+            </Card>
+
+            <TransactionForm
+                isOpen={isModalOpen}
+                onClose={handleCloseModal}
+                onSave={handleSave}
+                transaction={editingTransaction}
+                categories={categories}
+            />
+        </div>
+    );
+};
+
+interface TransactionFormProps {
+    isOpen: boolean;
+    onClose: () => void;
+    onSave: (data: Omit<Transaction, 'id' | 'user_id'>) => void;
+    transaction: Transaction | null;
+    categories: Category[];
+}
+
+const TransactionForm = ({ isOpen, onClose, onSave, transaction, categories }: TransactionFormProps) => {
+    const [description, setDescription] = useState('');
+    const [amount, setAmount] = useState('');
+    const [date, setDate] = useState('');
+    const [categoryId, setCategoryId] = useState('');
+
+    useEffect(() => {
+        if (transaction) {
+            setDescription(transaction.description);
+            setAmount(String(transaction.amount));
+            setDate(new Date(transaction.date).toISOString().split('T')[0]);
+            setCategoryId(String(transaction.category_id));
+        } else {
+            setDescription('');
+            setAmount('');
+            setDate(new Date().toISOString().split('T')[0]);
+            setCategoryId('');
+        }
+    }, [transaction]);
+
+    const handleSubmit = (e: React.FormEvent) => {
+        e.preventDefault();
+        onSave({ description, amount: Number(amount), date, category_id: Number(categoryId) });
+    };
+
+    return (
+        <Modal isOpen={isOpen} onClose={onClose} title={transaction ? 'Edit Transaction' : 'Add Transaction'}>
+            <form onSubmit={handleSubmit} className="space-y-4">
+                <div>
+                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Description</label>
+                    <Input type="text" value={description} onChange={e => setDescription(e.target.value)} required />
+                </div>
+                <div>
+                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Amount</label>
+                    <Input type="number" value={amount} onChange={e => setAmount(e.target.value)} required step="0.01" />
+                </div>
+                <div>
+                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Category</label>
+                    <Select value={categoryId} onChange={e => setCategoryId(e.target.value)} required>
+                        <option value="" disabled>Select a category</option>
+                        {categories.map(cat => <option key={cat.id} value={cat.id}>{cat.name}</option>)}
+                    </Select>
+                </div>
+                <div>
+                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Date</label>
+                    <Input type="date" value={date} onChange={e => setDate(e.target.value)} required />
+                </div>
+                <div className="flex justify-end gap-3 pt-4">
+                    <Button onClick={onClose} variant="secondary" type="button">Cancel</Button>
+                    <Button type="submit">Save Transaction</Button>
+                </div>
+            </form>
+        </Modal>
+    );
+};
+
+const UsersPage = () => {
+    const { isAdmin } = useAuth();
+    const [users, setUsers] = useState<User[]>([]);
+    const [loading, setLoading] = useState(true);
+    const [isModalOpen, setIsModalOpen] = useState(false);
+    const [editingUser, setEditingUser] = useState<User | null>(null);
+
+    const fetchUsers = useCallback(async () => {
+        try {
+            setLoading(true);
+            const data = await api.getUsers();
+            setUsers(data || []);
+        } catch (error) {
+            console.error("Failed to fetch users:", error);
+        } finally {
+            setLoading(false);
+        }
+    }, []);
+
+    useEffect(() => {
+        if (isAdmin) {
+            fetchUsers();
+        }
+    }, [isAdmin, fetchUsers]);
+
+    const handleOpenModal = (user: User | null = null) => {
+        setEditingUser(user);
+        setIsModalOpen(true);
+    };
+
+    const handleCloseModal = () => {
+        setIsModalOpen(false);
+        setEditingUser(null);
+    };
+
+    const handleSave = async (formData: {username: string, password?: string, role: 'admin' | 'user'}) => {
+        try {
+            if (editingUser) {
+                await api.updateUser(editingUser.id, { username: formData.username, role: formData.role });
+            } else if (formData.password) {
+                await api.registerUser(formData.username, formData.password);
+            }
+            fetchUsers();
+            handleCloseModal();
+        } catch (error: any) {
+            alert(`Error saving user: ${error.message}`);
+        }
+    };
+
+    const handleDelete = async (id: number) => {
+        if (window.confirm('Are you sure you want to delete this user? This is irreversible.')) {
+            try {
+                await api.deleteUser(id);
+                fetchUsers();
+            } catch (error: any) {
+                alert(`Error deleting user: ${error.message}`);
+            }
+        }
+    };
+
+    if (!isAdmin) {
+        return <div className="p-8 text-center"><h1 className="text-2xl text-red-600">Access Denied</h1><p>You must be an administrator to view this page.</p></div>;
+    }
+
+    return (
+        <div className="p-4 md:p-6 lg:p-8">
+            <div className="flex justify-between items-center mb-8">
+                <h1 className="text-3xl font-bold text-gray-800 dark:text-gray-100">User Management</h1>
+                <Button onClick={() => handleOpenModal()}><FilePlus size={20} /> Add User</Button>
+            </div>
+
+            <Card className="overflow-x-auto">
+                {loading ? <p>Loading users...</p> : (
+                <table className="w-full text-left">
+                    <thead>
+                        <tr className="border-b dark:border-gray-700">
+                            <th className="p-4 text-sm font-semibold text-gray-600 dark:text-gray-300">ID</th>
+                            <th className="p-4 text-sm font-semibold text-gray-600 dark:text-gray-300">Username</th>
+                            <th className="p-4 text-sm font-semibold text-gray-600 dark:text-gray-300">Role</th>
+                            <th className="p-4 text-sm font-semibold text-gray-600 dark:text-gray-300">Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {users.map(u => (
+                            <tr key={u.id} className="border-b dark:border-gray-700 last:border-b-0 hover:bg-gray-50 dark:hover:bg-gray-700/50">
+                                <td className="p-4 text-gray-800 dark:text-gray-100">{u.id}</td>
+                                <td className="p-4 text-gray-800 dark:text-gray-100">{u.username}</td>
+                                <td className="p-4 text-gray-600 dark:text-gray-300"><span className={`px-2 py-1 text-xs font-semibold rounded-full ${u.role === 'admin' ? 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200' : 'bg-gray-200 text-gray-800 dark:bg-gray-600 dark:text-gray-200'}`}>{u.role}</span></td>
+                                <td className="p-4">
+                                    <div className="flex gap-2">
+                                        <button onClick={() => handleOpenModal(u)} className="text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300"><Edit size={18} /></button>
+                                        <button onClick={() => handleDelete(u.id)} className="text-red-600 hover:text-red-800 dark:text-red-400 dark:hover:text-red-300"><Trash2 size={18} /></button>
+                                    </div>
+                                </td>
+                            </tr>
+                        ))}
+                    </tbody>
+                </table>
+                )}
+            </Card>
+            <UserForm
+                isOpen={isModalOpen}
+                onClose={handleCloseModal}
+                onSave={handleSave}
+                user={editingUser}
+            />
+        </div>
+    );
+};
+
+interface UserFormProps {
+    isOpen: boolean;
+    onClose: () => void;
+    onSave: (data: {username: string, password?: string, role: 'admin' | 'user'}) => void;
+    user: User | null;
+}
+
+const UserForm = ({ isOpen, onClose, onSave, user }: UserFormProps) => {
+    const [username, setUsername] = useState('');
+    const [password, setPassword] = useState('');
+    const [role, setRole] = useState<'user' | 'admin'>('user');
+
+    useEffect(() => {
+        if (user) {
+            setUsername(user.username);
+            setRole(user.role);
+            setPassword('');
+        } else {
+            setUsername('');
+            setRole('user');
+            setPassword('');
+        }
+    }, [user]);
+
+    const handleSubmit = (e: React.FormEvent) => {
+        e.preventDefault();
+        if (!user && !password) {
+            alert("Password is required for new users.");
+            return;
+        }
+        onSave({ username, password, role });
+    };
+
+    return (
+        <Modal isOpen={isOpen} onClose={onClose} title={user ? 'Edit User' : 'Add User'}>
+            <form onSubmit={handleSubmit} className="space-y-4">
+                <div>
+                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Username</label>
+                    <Input type="text" value={username} onChange={e => setUsername(e.target.value)} required />
+                </div>
+                {!user && (
+                    <div>
+                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Password</label>
+                        <Input id="password-create" type="password" value={password} onChange={e => setPassword(e.target.value)} required />
+                    </div>
+                )}
+                <div>
+                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Role</label>
+                    <Select value={role} onChange={e => setRole(e.target.value as 'user' | 'admin')} required>
+                        <option value="user">User</option>
+                        <option value="admin">Admin</option>
+                    </Select>
+                </div>
+                <div className="flex justify-end gap-3 pt-4">
+                    <Button onClick={onClose} variant="secondary" type="button">Cancel</Button>
+                    <Button type="submit">Save User</Button>
+                </div>
+            </form>
+        </Modal>
+    );
+};
+
+
+// --- LAYOUT COMPONENTS ---
+
+interface SidebarProps {
+    isSidebarOpen: boolean;
+    setSidebarOpen: Dispatch<SetStateAction<boolean>>;
+}
+
+const Sidebar = ({ isSidebarOpen, setSidebarOpen }: SidebarProps) => {
+    const { logout, isAdmin, user } = useAuth();
+    const [activePage, setActivePage] = useState(window.location.hash || '#/dashboard');
+
+    useEffect(() => {
+        const handleHashChange = () => {
+            setActivePage(window.location.hash);
+        };
+        window.addEventListener('hashchange', handleHashChange);
+        return () => window.removeEventListener('hashchange', handleHashChange);
+    }, []);
+
+    const NavLink = ({ href, icon, children }: { href: string, icon: ReactNode, children: ReactNode }) => (
+        <a 
+            href={href} 
+            onClick={() => setSidebarOpen(false)}
+            className={`flex items-center p-3 my-1 rounded-lg transition-colors duration-200 ${activePage === href ? 'bg-blue-600 text-white' : 'text-gray-600 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-700'}`}
+        >
+            {icon}
+            <span className="ml-4 font-medium">{children}</span>
+        </a>
+    );
+
+    return (
+        <>
+            <div className={`fixed inset-0 bg-black bg-opacity-50 z-30 lg:hidden ${isSidebarOpen ? 'block' : 'hidden'}`} onClick={() => setSidebarOpen(false)}></div>
+            
+            <aside className={`fixed top-0 left-0 h-full w-64 bg-white dark:bg-gray-800 shadow-lg z-40 transform transition-transform duration-300 ease-in-out ${isSidebarOpen ? 'translate-x-0' : '-translate-x-full'} lg:translate-x-0 lg:shadow-none lg:border-r dark:lg:border-gray-700`}>
+                <div className="flex flex-col h-full">
+                    <div className="flex items-center justify-between p-4 border-b dark:border-gray-700">
+                        <h1 className="text-2xl font-bold text-blue-600 dark:text-blue-400">Budgello</h1>
+                        <button onClick={() => setSidebarOpen(false)} className="lg:hidden text-gray-500 hover:text-gray-800">
+                            <X size={24} />
+                        </button>
+                    </div>
+                    
+                    <nav className="flex-grow p-4">
+                        <NavLink href="#/dashboard" icon={<Home size={20} />}>Dashboard</NavLink>
+                        <NavLink href="#/budgets" icon={<DollarSign size={20} />}>Budgets</NavLink>
+                        <NavLink href="#/transactions" icon={<BarChart2 size={20} />}>Transactions</NavLink>
+                        {isAdmin && <NavLink href="#/users" icon={<Users size={20} />}>Users</NavLink>}
+                    </nav>
+
+                    <div className="p-4 border-t dark:border-gray-700">
+                         <div className="mb-4">
+                            <p className="text-sm font-semibold text-gray-800 dark:text-gray-100">{user?.username}</p>
+                            <p className="text-xs text-gray-500 dark:text-gray-400">{user?.role}</p>
+                        </div>
+                        <Button onClick={logout} variant="secondary" className="w-full">
+                            <LogOut size={16} /> Logout
+                        </Button>
+                    </div>
+                </div>
+            </aside>
+        </>
+    );
+};
+
+const MainContent = () => {
+    const { isAuthenticated, loading } = useAuth();
+    const [page, setPage] = useState(window.location.hash.substring(1) || '/login');
+
+    useEffect(() => {
+        const handleHashChange = () => {
+            const hash = window.location.hash.substring(1);
+            if (isAuthenticated) {
+                 setPage(hash || '/dashboard');
+            } else {
+                 setPage('/login');
+            }
+        };
+        
+        if (loading) return; 
+        
+        if (!isAuthenticated) {
+            if (window.location.hash !== '#/login') {
+                window.location.hash = '/login';
+            }
+        } else if (window.location.hash === '#/login' || window.location.hash === '') {
+            window.location.hash = '/dashboard';
+        }
+        
+        handleHashChange();
+
+        window.addEventListener('hashchange', handleHashChange);
+        return () => window.removeEventListener('hashchange', handleHashChange);
+    }, [isAuthenticated, loading]);
+
+    if (loading) {
+        return <div className="flex items-center justify-center h-screen"><p>Loading application...</p></div>;
+    }
+
+    if (!isAuthenticated) {
+        return <LoginPage />;
+    }
+
+    const renderPage = () => {
+        switch (page) {
+            case '/dashboard':
+                return <DashboardPage />;
+            case '/budgets':
+                return <BudgetPage />;
+            case '/transactions':
+                return <TransactionsPage />;
+            case '/users':
+                return <UsersPage />;
+            default:
+                // Redirect to dashboard if hash is invalid
+                window.location.hash = '/dashboard';
+                return <DashboardPage />;
+        }
+    };
+    
+    return renderPage();
+};
+
+// --- APP ---
+export default function App() {
     return (
         <AuthProvider>
-            <DataProvider>
-                <MainNavigator />
-            </DataProvider>
+            <div className="bg-gray-100 dark:bg-gray-900 text-gray-900 dark:text-gray-100 min-h-screen">
+                <AppContent />
+            </div>
         </AuthProvider>
     );
 }
 
-const MainNavigator: FC = () => {
-    const { isAuthenticated } = useAuth();
-    return isAuthenticated ? <AppLayout /> : <LoginScreen />;
-};
+const AppContent = () => {
+    const { isAuthenticated, loading } = useAuth();
+    const [isSidebarOpen, setSidebarOpen] = useState(false);
 
-export default App;
+    if (loading) {
+      return <div className="flex items-center justify-center h-screen">Loading...</div>
+    }
+
+    if (!isAuthenticated) {
+        return <MainContent />;
+    }
+
+    return (
+        <div className="flex">
+            <Sidebar isSidebarOpen={isSidebarOpen} setSidebarOpen={setSidebarOpen} />
+            <main className="flex-1 lg:ml-64 transition-all duration-300">
+                <header className="sticky top-0 bg-white/80 dark:bg-gray-800/80 backdrop-blur-sm lg:hidden p-4 border-b dark:border-gray-700 flex items-center">
+                    <button onClick={() => setSidebarOpen(true)} className="text-gray-600 dark:text-gray-300">
+                        <Menu size={24} />
+                    </button>
+                    <h1 className="ml-4 font-semibold text-lg">Budgello</h1>
+                </header>
+                <MainContent />
+            </main>
+        </div>
+    );
+}
