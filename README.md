@@ -150,12 +150,28 @@ The source code repository is organized as follows:
 └── docker-compose.yml
 ```
 
+### Screenshots (PC View)
+
+<img width="2558" height="1315" alt="web dash" src="https://github.com/user-attachments/assets/907ceffc-2dc6-4f77-9df9-3e09c296b5bf" />
+<img width="2558" height="1316" alt="web budget" src="https://github.com/user-attachments/assets/35a28aa7-e1c9-4282-b66d-990c8ae03362" />
+<img width="2556" height="1315" alt="web transaction" src="https://github.com/user-attachments/assets/e4ebcc41-a180-41c0-8454-d75fd1566115" />
+<img width="2556" height="1313" alt="web category" src="https://github.com/user-attachments/assets/7bdf264d-a1b8-4e3c-9d14-8691cea69d32" />
+<img width="2558" height="1316" alt="web users" src="https://github.com/user-attachments/assets/d5d0acb3-2b07-4a35-8834-59985bab182c" />
+
+### Screenshots (Phone View)
+
+<img width="1320" height="2868" alt="phone dash" src="https://github.com/user-attachments/assets/db4cd669-1664-4448-8591-75e6fc1fae6d" />
+<img width="1320" height="2868" alt="phone budget" src="https://github.com/user-attachments/assets/43a84bd4-bc61-4fa7-9e5c-8c530f9bcb0b" />
+<img width="1320" height="2868" alt="phone transaction" src="https://github.com/user-attachments/assets/693d907f-86cc-4854-996c-ba9ebf005f47" />
+<img width="1320" height="2868" alt="phone category" src="https://github.com/user-attachments/assets/2c34a777-0186-48ce-b9dd-2587c479d857" />
+<img width="1320" height="2868" alt="phone users" src="https://github.com/user-attachments/assets/97242740-c0b9-408b-85d0-1864992fa9bf" />
+
 ## Contributing
 
 The source code is hosted on GitHub. Contributions, issues, and feature requests are welcome!
 
--   **Repository:** [https://github.com/drewe44/Budgello](https://github.com/drewe44/Budgello)
--   **Issues Page:** [https://github.com/drewe44/Budgello/issues](https://github.com/drewe44/Budgello/issues)
+-   **Repository:** [https://github.com/drewe4401/Budgello](https://github.com/drewe44/Budgello)
+-   **Issues Page:** [https://github.com/drewe4401/Budgello/issues](https://github.com/drewe44/Budgello/issues)
 
 ## 📄 License
 
