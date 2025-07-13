@@ -53,12 +53,10 @@ type SharedBudget struct {
 
 // --- HELPER FUNCTIONS ---
 
-// respondWithError sends a JSON error message.
 func respondWithError(w http.ResponseWriter, code int, message string) {
 	respondWithJSON(w, code, map[string]string{"error": message})
 }
 
-// respondWithJSON sends a JSON response.
 func respondWithJSON(w http.ResponseWriter, code int, payload interface{}) {
 	response, _ := json.Marshal(payload)
 	w.Header().Set("Content-Type", "application/json")
@@ -84,7 +82,7 @@ func RegisterUser(w http.ResponseWriter, r *http.Request) {
 		respondWithError(w, http.StatusInternalServerError, "Failed to register user")
 		return
 	}
-	u.Password = "" // Do not send password back
+	u.Password = ""
 	respondWithJSON(w, http.StatusCreated, u)
 }
 
@@ -137,14 +135,11 @@ func UpdateUser(w http.ResponseWriter, r *http.Request) {
 		respondWithError(w, http.StatusBadRequest, "Invalid user ID")
 		return
 	}
-
 	var u User
 	if err := json.NewDecoder(r.Body).Decode(&u); err != nil {
 		respondWithError(w, http.StatusBadRequest, "Invalid request payload")
 		return
 	}
-
-	// For now, only allow updating username and role. Password updates should have a separate, more secure flow.
 	_, err = db.Exec("UPDATE users SET username=$1, role=$2 WHERE id=$3", u.Username, u.Role, userID)
 	if err != nil {
 		respondWithError(w, http.StatusInternalServerError, "Failed to update user")
@@ -160,14 +155,11 @@ func DeleteUser(w http.ResponseWriter, r *http.Request) {
 		respondWithError(w, http.StatusBadRequest, "Invalid user ID")
 		return
 	}
-
-	// The ON DELETE CASCADE in the schema will handle related data.
 	res, err := db.Exec("DELETE FROM users WHERE id=$1", userID)
 	if err != nil {
 		respondWithError(w, http.StatusInternalServerError, "Failed to delete user")
 		return
 	}
-
 	rowsAffected, err := res.RowsAffected()
 	if err != nil {
 		respondWithError(w, http.StatusInternalServerError, "Failed to verify deletion")
@@ -177,7 +169,6 @@ func DeleteUser(w http.ResponseWriter, r *http.Request) {
 		respondWithError(w, http.StatusNotFound, "User not found")
 		return
 	}
-
 	respondWithJSON(w, http.StatusOK, map[string]string{"message": "User deleted successfully"})
 }
 
@@ -249,8 +240,6 @@ func DeleteCategory(w http.ResponseWriter, r *http.Request) {
 		respondWithError(w, http.StatusBadRequest, "Invalid category ID")
 		return
 	}
-	// Note: You might want to handle what happens to transactions using this category.
-	// For now, we just delete the category.
 	_, err = db.Exec("DELETE FROM categories WHERE id=$1", categoryID)
 	if err != nil {
 		respondWithError(w, http.StatusInternalServerError, "Failed to delete category")
@@ -267,7 +256,6 @@ func CreateTransaction(w http.ResponseWriter, r *http.Request) {
 		respondWithError(w, http.StatusBadRequest, "Invalid request payload")
 		return
 	}
-	// Ensure date is set if not provided
 	if t.Date.IsZero() {
 		t.Date = time.Now()
 	}
@@ -349,12 +337,23 @@ func CreateBudget(w http.ResponseWriter, r *http.Request) {
 		respondWithError(w, http.StatusBadRequest, "Invalid request payload")
 		return
 	}
-	err := db.QueryRow("INSERT INTO budgets (user_id, period, frequency, amount) VALUES ($1, $2, $3, $4) RETURNING id",
-		b.UserID, b.Period, b.Frequency, b.Amount).Scan(&b.ID)
+
+	// Corrected SQL query with standard spaces
+	query := `
+        INSERT INTO budgets (user_id, period, frequency, amount)
+        VALUES ($1, $2, $3, $4)
+        ON CONFLICT (user_id, frequency)
+        DO UPDATE SET amount = EXCLUDED.amount, period = EXCLUDED.period
+        RETURNING id
+    `
+
+	err := db.QueryRow(query, b.UserID, b.Period, b.Frequency, b.Amount).Scan(&b.ID)
 	if err != nil {
-		respondWithError(w, http.StatusInternalServerError, "Failed to create budget")
+		log.Printf("Error creating/updating budget: %v", err)
+		respondWithError(w, http.StatusInternalServerError, "Failed to create or update budget")
 		return
 	}
+
 	respondWithJSON(w, http.StatusCreated, b)
 }
 
@@ -411,7 +410,6 @@ func DeleteBudget(w http.ResponseWriter, r *http.Request) {
 		respondWithError(w, http.StatusBadRequest, "Invalid budget ID")
 		return
 	}
-	// Also delete associated shares
 	_, err = db.Exec("DELETE FROM shared_budgets WHERE budget_id=$1", budgetID)
 	if err != nil {
 		log.Printf("Could not delete shared budgets for budget ID %d: %v", budgetID, err)
@@ -434,15 +432,12 @@ func ShareBudget(w http.ResponseWriter, r *http.Request) {
 		respondWithError(w, http.StatusBadRequest, "Invalid request payload")
 		return
 	}
-
-	// Verify the `to_user_id` exists
 	var exists bool
 	err := db.QueryRow("SELECT EXISTS(SELECT 1 FROM users WHERE id=$1)", sb.ToUserID).Scan(&exists)
 	if err != nil || !exists {
 		respondWithError(w, http.StatusBadRequest, "User to share with does not exist.")
 		return
 	}
-
 	err = db.QueryRow("INSERT INTO shared_budgets (budget_id, from_user_id, to_user_id) VALUES ($1, $2, $3) RETURNING id",
 		sb.BudgetID, sb.FromUserID, sb.ToUserID).Scan(&sb.ID)
 	if err != nil {
@@ -459,21 +454,17 @@ func GetSharedBudgets(w http.ResponseWriter, r *http.Request) {
 		respondWithError(w, http.StatusBadRequest, "Invalid user ID")
 		return
 	}
-
-	// This query gets budgets shared *with* the specified user.
 	query := `
         SELECT b.id, b.user_id, b.period, b.frequency, b.amount
         FROM budgets b
         JOIN shared_budgets sb ON b.id = sb.budget_id
         WHERE sb.to_user_id = $1`
-
 	rows, err := db.Query(query, userID)
 	if err != nil {
 		respondWithError(w, http.StatusInternalServerError, "Failed to retrieve shared budgets")
 		return
 	}
 	defer rows.Close()
-
 	var budgets []Budget
 	for rows.Next() {
 		var b Budget
@@ -487,14 +478,12 @@ func GetSharedBudgets(w http.ResponseWriter, r *http.Request) {
 }
 
 func DeleteSharedBudget(w http.ResponseWriter, r *http.Request) {
-	// This would typically be based on the share ID itself, or a combination of budget_id and to_user_id
 	params := mux.Vars(r)
 	shareID, err := strconv.Atoi(params["id"])
 	if err != nil {
 		respondWithError(w, http.StatusBadRequest, "Invalid share ID")
 		return
 	}
-
 	_, err = db.Exec("DELETE FROM shared_budgets WHERE id=$1", shareID)
 	if err != nil {
 		respondWithError(w, http.StatusInternalServerError, "Failed to unshare budget")

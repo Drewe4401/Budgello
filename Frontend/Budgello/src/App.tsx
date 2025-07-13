@@ -658,15 +658,16 @@ const BudgetForm = ({ isOpen, onClose, onSave, budget, existingFrequencies }: Bu
     const [frequency, setFrequency] = useState<Budget['frequency'] | ''>('');
     const [amount, setAmount] = useState('');
 
+    // ✅ FIXED: Added 'isOpen' to the dependency array
     useEffect(() => {
-        if (budget) {
+        if (isOpen && budget) {
             setFrequency(budget.frequency);
             setAmount(String(budget.amount));
         } else {
             setFrequency('');
             setAmount('');
         }
-    }, [budget]);
+    }, [budget, isOpen]);
 
     const handleSubmit = (e: React.FormEvent) => {
         e.preventDefault();
@@ -781,7 +782,7 @@ const CategoriesPage = () => {
                     <Tags className="mx-auto h-12 w-12 text-gray-400" />
                     <h3 className="mt-2 text-sm font-medium text-gray-900 dark:text-white">No categories</h3>
                     <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">Get started by creating a new category.</p>
-                 </div>
+               </div>
             ) : (
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
                     {categories.map(cat => (
@@ -828,6 +829,7 @@ interface CategoryFormProps {
 const CategoryForm = ({ isOpen, onClose, onSave, category }: CategoryFormProps) => {
     const [name, setName] = useState('');
 
+    // This component was already correct, no changes needed here.
     useEffect(() => {
         if (category) {
             setName(category.name);
@@ -1052,8 +1054,9 @@ const TransactionForm = ({ isOpen, onClose, onSave, transaction, categories }: T
     const [date, setDate] = useState('');
     const [categoryId, setCategoryId] = useState('');
 
+    // ✅ FIXED: Added 'isOpen' to the dependency array
     useEffect(() => {
-        if (transaction) {
+        if (isOpen && transaction) {
             setDescription(transaction.description);
             setAmount(String(transaction.amount));
             setDate(new Date(transaction.date).toISOString().split('T')[0]);
@@ -1064,7 +1067,7 @@ const TransactionForm = ({ isOpen, onClose, onSave, transaction, categories }: T
             setDate(new Date().toISOString().split('T')[0]);
             setCategoryId('');
         }
-    }, [transaction]);
+    }, [transaction, isOpen]);
 
     const handleSubmit = (e: React.FormEvent) => {
         e.preventDefault();
@@ -1244,8 +1247,9 @@ const UserForm = ({ isOpen, onClose, onSave, user }: UserFormProps) => {
     const [password, setPassword] = useState('');
     const [role, setRole] = useState<'user' | 'admin'>('user');
 
+    // ✅ FIXED: Added 'isOpen' to the dependency array
     useEffect(() => {
-        if (user) {
+        if (isOpen && user) {
             setUsername(user.username);
             setRole(user.role);
             setPassword('');
@@ -1254,7 +1258,7 @@ const UserForm = ({ isOpen, onClose, onSave, user }: UserFormProps) => {
             setRole('user');
             setPassword('');
         }
-    }, [user]);
+    }, [user, isOpen]);
 
     const handleSubmit = (e: React.FormEvent) => {
         e.preventDefault();
