@@ -1,7 +1,7 @@
 import React, { useState, useEffect, createContext, useContext, useCallback } from 'react';
 import type { ReactNode, SetStateAction, Dispatch } from 'react';
 import { ResponsiveContainer, PieChart, Pie, Cell, Tooltip, Legend, LineChart, Line, XAxis, YAxis, CartesianGrid } from 'recharts';
-import { FilePlus, Edit, Trash2, LogOut, Menu, X, Users, DollarSign, BarChart2, Home, Search } from 'lucide-react';
+import { FilePlus, Edit, Trash2, LogOut, Menu, X, Users, DollarSign, BarChart2, Home, Search, Tags } from 'lucide-react';
 import './App.css'; // Assuming you have a CSS file for global styles
 
 // --- CONFIG ---
@@ -145,6 +145,9 @@ const api = {
     registerUser: (username: string, password: string) => api.request<User>('/register', { method: 'POST', body: JSON.stringify({ username, password }) }),
     // Categories
     getCategories: (userId: number) => api.request<Category[]>(`/categories/${userId}`),
+    createCategory: (data: Omit<Category, 'id'>) => api.request<Category>('/categories', { method: 'POST', body: JSON.stringify(data) }),
+    updateCategory: (id: number, data: Partial<Category>) => api.request<Category>(`/categories/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
+    deleteCategory: (id: number) => api.request<null>(`/categories/${id}`, { method: 'DELETE' }),
     // Transactions
     getTransactions: (userId: number) => api.request<Transaction[]>(`/transactions/${userId}`),
     createTransaction: (data: Omit<Transaction, 'id'>) => api.request<Transaction>('/transactions', { method: 'POST', body: JSON.stringify(data) }),
@@ -186,7 +189,7 @@ const Modal = ({ isOpen, onClose, title, children }: ModalProps) => {
 };
 
 const Card = ({ children, className = '' }: { children: ReactNode, className?: string }) => (
-    <div className={`bg-white dark:bg-gray-800 rounded-lg shadow-md p-6 ${className}`}>
+    <div className={`bg-white dark:bg-gray-800 rounded-lg shadow-md p-4 md:p-6 ${className}`}>
         {children}
     </div>
 );
@@ -217,7 +220,7 @@ const Button = ({ children, onClick, className = '', variant = 'primary', type =
 const Input = (props: React.InputHTMLAttributes<HTMLInputElement>) => (
     <input
         {...props}
-        className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-gray-700 dark:border-gray-600 dark:text-white dark:focus:ring-blue-400"
+        className={`w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-gray-700 dark:border-gray-600 dark:text-white dark:focus:ring-blue-400 ${props.className || ''}`}
     />
 );
 
@@ -604,7 +607,7 @@ const BudgetPage = () => {
 
     return (
         <div className="p-4 md:p-6 lg:p-8">
-            <div className="flex justify-between items-center mb-8">
+            <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-8 gap-4">
                 <h1 className="text-3xl font-bold text-gray-800 dark:text-gray-100">Budgets</h1>
                 <Button onClick={() => handleOpenModal()} disabled={existingFrequencies.length >= 3}>
                     <FilePlus size={20} /> New Budget
@@ -701,6 +704,166 @@ const BudgetForm = ({ isOpen, onClose, onSave, budget, existingFrequencies }: Bu
     );
 };
 
+const CategoriesPage = () => {
+    const { user } = useAuth();
+    const [categories, setCategories] = useState<Category[]>([]);
+    const [loading, setLoading] = useState(true);
+    const [isModalOpen, setIsModalOpen] = useState(false);
+    const [editingCategory, setEditingCategory] = useState<Category | null>(null);
+
+    const fetchCategories = useCallback(async () => {
+        if (!user) return;
+        try {
+            setLoading(true);
+            const data = await api.getCategories(user.id);
+            setCategories(data || []);
+        } catch (error) {
+            console.error("Failed to fetch categories:", error);
+        } finally {
+            setLoading(false);
+        }
+    }, [user]);
+
+    useEffect(() => {
+        fetchCategories();
+    }, [fetchCategories]);
+
+    const handleOpenModal = (category: Category | null = null) => {
+        setEditingCategory(category);
+        setIsModalOpen(true);
+    };
+
+    const handleCloseModal = () => {
+        setIsModalOpen(false);
+        setEditingCategory(null);
+    };
+
+    const handleSave = async (formData: { name: string }) => {
+        if (!user) return;
+        try {
+            if (editingCategory) {
+                await api.updateCategory(editingCategory.id, { name: formData.name });
+            } else {
+                await api.createCategory({ name: formData.name, user_id: user.id });
+            }
+            fetchCategories();
+            handleCloseModal();
+        } catch (error: any) {
+            alert(`Error saving category: ${error.message}`);
+        }
+    };
+
+    const handleDelete = async (id: number) => {
+        if (window.confirm('Are you sure you want to delete this category? This may affect existing transactions.')) {
+            try {
+                await api.deleteCategory(id);
+                fetchCategories();
+            } catch (error: any) {
+                alert(`Error deleting category: ${error.message}`);
+            }
+        }
+    };
+
+    return (
+        <div className="p-4 md:p-6 lg:p-8">
+            <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-8 gap-4">
+                <h1 className="text-3xl font-bold text-gray-800 dark:text-gray-100">Categories</h1>
+                <Button onClick={() => handleOpenModal()} className="w-full sm:w-auto">
+                    <FilePlus size={20} /> New Category
+                </Button>
+            </div>
+
+            {loading ? (
+                <div className="text-center py-8">
+                    <p className="text-gray-500 dark:text-gray-400">Loading categories...</p>
+                </div>
+            ) : categories.length === 0 ? (
+                 <div className="text-center py-12 bg-white dark:bg-gray-800 rounded-lg shadow-md">
+                    <Tags className="mx-auto h-12 w-12 text-gray-400" />
+                    <h3 className="mt-2 text-sm font-medium text-gray-900 dark:text-white">No categories</h3>
+                    <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">Get started by creating a new category.</p>
+                 </div>
+            ) : (
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                    {categories.map(cat => (
+                        <Card key={cat.id} className="p-4 flex justify-between items-center">
+                            <p className="font-semibold text-gray-800 dark:text-gray-100">{cat.name}</p>
+                            <div className="flex items-center gap-1">
+                                <button 
+                                    onClick={() => handleOpenModal(cat)} 
+                                    className="p-2 text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300 rounded-full hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
+                                    aria-label={`Edit ${cat.name}`}
+                                >
+                                    <Edit size={18} />
+                                </button>
+                                <button 
+                                    onClick={() => handleDelete(cat.id)} 
+                                    className="p-2 text-red-600 hover:text-red-800 dark:text-red-400 dark:hover:text-red-300 rounded-full hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
+                                    aria-label={`Delete ${cat.name}`}
+                                >
+                                    <Trash2 size={18} />
+                                </button>
+                            </div>
+                        </Card>
+                    ))}
+                </div>
+            )}
+
+            <CategoryForm
+                isOpen={isModalOpen}
+                onClose={handleCloseModal}
+                onSave={handleSave}
+                category={editingCategory}
+            />
+        </div>
+    );
+};
+
+interface CategoryFormProps {
+    isOpen: boolean;
+    onClose: () => void;
+    onSave: (data: { name: string }) => void;
+    category: Category | null;
+}
+
+const CategoryForm = ({ isOpen, onClose, onSave, category }: CategoryFormProps) => {
+    const [name, setName] = useState('');
+
+    useEffect(() => {
+        if (category) {
+            setName(category.name);
+        } else {
+            setName('');
+        }
+    }, [category, isOpen]);
+
+    const handleSubmit = (e: React.FormEvent) => {
+        e.preventDefault();
+        onSave({ name });
+    };
+
+    return (
+        <Modal isOpen={isOpen} onClose={onClose} title={category ? 'Edit Category' : 'Add Category'}>
+            <form onSubmit={handleSubmit} className="space-y-4">
+                <div>
+                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Category Name</label>
+                    <Input 
+                        type="text" 
+                        value={name} 
+                        onChange={e => setName(e.target.value)} 
+                        required 
+                        placeholder="e.g., Groceries"
+                    />
+                </div>
+                <div className="flex justify-end gap-3 pt-4">
+                    <Button onClick={onClose} variant="secondary" type="button">Cancel</Button>
+                    <Button type="submit">Save Category</Button>
+                </div>
+            </form>
+        </Modal>
+    );
+};
+
 
 const TransactionsPage = () => {
     const { user } = useAuth();
@@ -790,14 +953,16 @@ const TransactionsPage = () => {
                 <h1 className="text-3xl font-bold text-gray-800 dark:text-gray-100">Transactions</h1>
                 <div className="flex gap-4 w-full md:w-auto">
                     <div className="relative flex-grow">
-                        <Input 
+                        <div className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3">
+                            <Search className="h-5 w-5 text-gray-400" aria-hidden="true" />
+                        </div>
+                        <Input
                             type="text"
                             placeholder="Search transactions..."
                             value={searchTerm}
                             onChange={(e) => setSearchTerm(e.target.value)}
-                            className="pl-10"
+                            className="w-full pl-10"
                         />
-                        <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={20}/>
                     </div>
                     <Button onClick={() => handleOpenModal()}>
                         <FilePlus size={20} /> New
@@ -805,7 +970,32 @@ const TransactionsPage = () => {
                 </div>
             </div>
 
-            <Card className="overflow-x-auto">
+            {/* Mobile View: List of Cards */}
+            <div className="space-y-4 md:hidden">
+                {loading ? <p>Loading transactions...</p> : filteredTransactions.map(t => (
+                    <Card key={t.id}>
+                        <div className="flex justify-between items-start">
+                            <div>
+                                <p className="font-semibold text-gray-800 dark:text-gray-100">{t.description}</p>
+                                <p className="text-sm text-gray-500 dark:text-gray-400">{categoryMap[t.category_id] || 'Uncategorized'}</p>
+                                <p className="text-sm text-gray-500 dark:text-gray-400">{new Date(t.date).toLocaleDateString()}</p>
+                            </div>
+                            <p className="font-bold text-lg text-red-500">-${t.amount.toFixed(2)}</p>
+                        </div>
+                        <div className="flex gap-2 mt-4 border-t pt-3 dark:border-gray-700">
+                            <Button onClick={() => handleOpenModal(t)} variant="secondary" className="w-full text-xs">
+                                <Edit size={16} /> Edit
+                            </Button>
+                            <Button onClick={() => handleDelete(t.id)} variant="danger" className="w-full text-xs">
+                                <Trash2 size={16} /> Delete
+                            </Button>
+                        </div>
+                    </Card>
+                ))}
+            </div>
+
+            {/* Desktop View: Table */}
+            <Card className="hidden md:block overflow-x-auto">
                 {loading ? <p>Loading transactions...</p> : (
                 <table className="w-full text-left">
                     <thead className="border-b dark:border-gray-700">
@@ -979,12 +1169,32 @@ const UsersPage = () => {
 
     return (
         <div className="p-4 md:p-6 lg:p-8">
-            <div className="flex justify-between items-center mb-8">
+            <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-8 gap-4">
                 <h1 className="text-3xl font-bold text-gray-800 dark:text-gray-100">User Management</h1>
                 <Button onClick={() => handleOpenModal()}><FilePlus size={20} /> Add User</Button>
             </div>
 
-            <Card className="overflow-x-auto">
+            {/* Mobile View */}
+            <div className="space-y-4 md:hidden">
+                {loading ? <p>Loading users...</p> : users.map(u => (
+                    <Card key={u.id}>
+                        <div className="flex justify-between items-start">
+                             <div>
+                                <p className="font-semibold text-gray-800 dark:text-gray-100">{u.username}</p>
+                                <p className="text-sm text-gray-500 dark:text-gray-400">ID: {u.id}</p>
+                            </div>
+                            <span className={`px-2 py-1 text-xs font-semibold rounded-full ${u.role === 'admin' ? 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200' : 'bg-gray-200 text-gray-800 dark:bg-gray-600 dark:text-gray-200'}`}>{u.role}</span>
+                        </div>
+                        <div className="flex gap-2 mt-4 border-t pt-3 dark:border-gray-700">
+                            <Button onClick={() => handleOpenModal(u)} variant="secondary" className="w-full text-xs"><Edit size={16} /> Edit</Button>
+                            <Button onClick={() => handleDelete(u.id)} variant="danger" className="w-full text-xs"><Trash2 size={16} /> Delete</Button>
+                        </div>
+                    </Card>
+                ))}
+            </div>
+
+            {/* Desktop View */}
+            <Card className="hidden md:block overflow-x-auto">
                 {loading ? <p>Loading users...</p> : (
                 <table className="w-full text-left">
                     <thead>
@@ -1133,6 +1343,7 @@ const Sidebar = ({ isSidebarOpen, setSidebarOpen }: SidebarProps) => {
                         <NavLink href="#/dashboard" icon={<Home size={20} />}>Dashboard</NavLink>
                         <NavLink href="#/budgets" icon={<DollarSign size={20} />}>Budgets</NavLink>
                         <NavLink href="#/transactions" icon={<BarChart2 size={20} />}>Transactions</NavLink>
+                        <NavLink href="#/categories" icon={<Tags size={20} />}>Categories</NavLink>
                         {isAdmin && <NavLink href="#/users" icon={<Users size={20} />}>Users</NavLink>}
                     </nav>
 
@@ -1197,6 +1408,8 @@ const MainContent = () => {
                 return <BudgetPage />;
             case '/transactions':
                 return <TransactionsPage />;
+            case '/categories':
+                return <CategoriesPage />;
             case '/users':
                 return <UsersPage />;
             default:
@@ -1236,7 +1449,7 @@ const AppContent = () => {
         <div className="flex">
             <Sidebar isSidebarOpen={isSidebarOpen} setSidebarOpen={setSidebarOpen} />
             <main className="flex-1 lg:ml-64 transition-all duration-300">
-                <header className="sticky top-0 bg-white/80 dark:bg-gray-800/80 backdrop-blur-sm lg:hidden p-4 border-b dark:border-gray-700 flex items-center">
+                <header className="sticky top-0 bg-white/80 dark:bg-gray-800/80 backdrop-blur-sm lg:hidden p-4 border-b dark:border-gray-700 flex items-center z-20">
                     <button onClick={() => setSidebarOpen(true)} className="text-gray-600 dark:text-gray-300">
                         <Menu size={24} />
                     </button>
