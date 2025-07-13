@@ -170,8 +170,8 @@ The source code repository is organized as follows:
 
 The source code is hosted on GitHub. Contributions, issues, and feature requests are welcome!
 
--   **Repository:** [https://github.com/drewe44/Budgello](https://github.com/drewe44/Budgello)
--   **Issues Page:** [https://github.com/drewe44/Budgello/issues](https://github.com/drewe44/Budgello/issues)
+-   **Repository:** [https://github.com/drewe4401/Budgello](https://github.com/drewe44/Budgello)
+-   **Issues Page:** [https://github.com/drewe4401/Budgello/issues](https://github.com/drewe44/Budgello/issues)
 
 ## 📄 License
 
