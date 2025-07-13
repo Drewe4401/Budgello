@@ -4,8 +4,7 @@ import { ResponsiveContainer, PieChart, Pie, Cell, Tooltip, Legend, LineChart, L
 import { FilePlus, Edit, Trash2, LogOut, Menu, X, Users, DollarSign, BarChart2, Home, Search, Tags } from 'lucide-react';
 import './App.css'; // Assuming you have a CSS file for global styles
 
-// --- CONFIG ---
-const API_BASE_URL = 'http://localhost:8080';
+const API_BASE_URL = '/api';
 
 // --- TYPE DEFINITIONS ---
 interface User {

@@ -6,18 +6,26 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"os"
 
 	"github.com/gorilla/handlers"
 	"github.com/gorilla/mux"
 	_ "github.com/lib/pq"
+	"golang.org/x/crypto/bcrypt"
 )
 
 var db *sql.DB
 
 func main() {
-	// Database connection
+	// Database connection from environment variables
+	connStr := fmt.Sprintf("postgres://%s:%s@%s:%s/%s?sslmode=disable",
+		os.Getenv("POSTGRES_USER"),
+		os.Getenv("POSTGRES_PASSWORD"),
+		os.Getenv("POSTGRES_HOST"),
+		os.Getenv("POSTGRES_PORT"),
+		os.Getenv("POSTGRES_DB"))
+
 	var err error
-	connStr := "postgres://postgres:postgres@localhost:5432/budgello_db?sslmode=disable"
 	db, err = sql.Open("postgres", connStr)
 	if err != nil {
 		log.Fatal("Failed to connect to database:", err)
@@ -34,8 +42,8 @@ func main() {
 		log.Fatal("Failed to create tables:", err)
 	}
 
-	if err := seedDatabase(); err != nil {
-		log.Fatal("Failed to seed database:", err)
+	if err := createAdminUser(); err != nil {
+		log.Fatal("Failed to create admin user:", err)
 	}
 
 	// Router
@@ -44,9 +52,9 @@ func main() {
 	// --- User Routes ---
 	r.HandleFunc("/register", RegisterUser).Methods("POST")
 	r.HandleFunc("/login", LoginUser).Methods("POST")
-	r.HandleFunc("/users", GetAllUsers).Methods("GET")        // Typically admin-only
-	r.HandleFunc("/users/{id}", UpdateUser).Methods("PUT")    // Typically admin or self
-	r.HandleFunc("/users/{id}", DeleteUser).Methods("DELETE") // Typically admin or self
+	r.HandleFunc("/users", GetAllUsers).Methods("GET")
+	r.HandleFunc("/users/{id}", UpdateUser).Methods("PUT")
+	r.HandleFunc("/users/{id}", DeleteUser).Methods("DELETE")
 
 	// --- Category Routes ---
 	r.HandleFunc("/categories", CreateCategory).Methods("POST")
@@ -72,10 +80,44 @@ func main() {
 	r.HandleFunc("/budgets/share/{id}", DeleteSharedBudget).Methods("DELETE") // To unshare
 
 	// CORS Configuration
-	allowedOrigins := handlers.AllowedOrigins([]string{"http://localhost:5173"})
+	allowedOrigin := os.Getenv("CORS_ORIGIN")
+	if allowedOrigin == "" {
+		allowedOrigin = "http://localhost:5173" // Default for local development
+	}
+
+	allowedOrigins := handlers.AllowedOrigins([]string{allowedOrigin})
 	allowedMethods := handlers.AllowedMethods([]string{"GET", "POST", "PUT", "DELETE", "OPTIONS"})
 	allowedHeaders := handlers.AllowedHeaders([]string{"X-Requested-With", "Content-Type", "Authorization"})
 
-	log.Println("Budgello server starting on :8080")
+	log.Printf("Budgello server starting on :8080, allowing origin: %s", allowedOrigin)
 	log.Fatal(http.ListenAndServe(":8080", handlers.CORS(allowedOrigins, allowedMethods, allowedHeaders)(r)))
+}
+
+func createAdminUser() error {
+	adminUsername := os.Getenv("ADMIN_USERNAME")
+	adminPassword := os.Getenv("ADMIN_PASSWORD")
+
+	// Check if admin user already exists
+	var exists bool
+	err := db.QueryRow("SELECT EXISTS(SELECT 1 FROM users WHERE username=$1)", adminUsername).Scan(&exists)
+	if err != nil {
+		return err
+	}
+
+	if !exists {
+		hashedPassword, err := bcrypt.GenerateFromPassword([]byte(adminPassword), 8)
+		if err != nil {
+			return err
+		}
+
+		_, err = db.Exec("INSERT INTO users (username, password, role) VALUES ($1, $2, 'admin')", adminUsername, string(hashedPassword))
+		if err != nil {
+			return err
+		}
+		log.Println("Admin user created successfully.")
+	} else {
+		log.Println("Admin user already exists.")
+	}
+
+	return nil
 }

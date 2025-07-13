@@ -1,0 +1,58 @@
+# docker-compose.yml
+
+version: '3.8'
+
+services:
+  # Frontend Service (React App)
+  frontend:
+    # The 'build' section is replaced with 'image'.
+    # Docker will pull this image from a public registry like Docker Hub.
+    # You must replace 'yourdockerhubusername' with your actual username.
+    image: drewe44/budgello-frontend:latest
+    ports:
+      # Use the FRONTEND_PORT from the .env file, or default to 5173.
+      - "${FRONTEND_PORT:-5173}:80"
+    depends_on:
+      - backend
+    restart: always
+
+  # Backend Service (Go App)
+  backend:
+    # The 'build' section is also replaced with 'image'.
+    image: drewe44/budgello-backend:latest
+    ports:
+      - "8080:8080"
+    environment:
+      - CORS_ORIGIN=http://localhost:${FRONTEND_PORT:-5173}
+      - POSTGRES_HOST=db
+      - POSTGRES_PORT=${POSTGRES_PORT:-5432}
+      - POSTGRES_USER=${POSTGRES_USER:-postgres}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-postgres}
+      - POSTGRES_DB=budgello_db
+      - ADMIN_USERNAME=${ADMIN_USERNAME:-admin}
+      - ADMIN_PASSWORD=${ADMIN_PASSWORD:-admin}
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: always
+
+  # Database Service (PostgreSQL)
+  db:
+    image: postgres:latest
+    environment:
+      - POSTGRES_USER=${POSTGRES_USER:-postgres}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-postgres}
+      - POSTGRES_DB=budgello_db
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres} -d budgello_db"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: always
+
+volumes:
+  postgres_data:
