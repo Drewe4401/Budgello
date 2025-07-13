@@ -147,4 +147,4 @@ Repository: https://github.com/drewe44/Budgello
 Issues Page: https://github.com/drewe44/Budgello/issues
 
 📄 License
-This project is licensed under the GNU License.
+This project is licensed under the GPL-3.0 License.
